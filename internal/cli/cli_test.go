@@ -12,6 +12,8 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/chandlerklein/everybody-codes-cli/internal/everybodycodes"
 )
 
 func TestCommandHelp(t *testing.T) {
@@ -30,6 +32,7 @@ func TestCommandHelp(t *testing.T) {
 		{[]string{"auth", "--help"}, "ec auth [flags]"},
 		{[]string{"auth", "check", "--help"}, "ec auth check [flags]"},
 		{[]string{"status", "--help"}, "ec status [flags]"},
+		{[]string{"update", "--help"}, "ec update [flags]"},
 		{[]string{"submit", "--help"}, "ec submit --quest <quest> --part <part> [<ANSWER>]"},
 		{[]string{"help", "submit"}, "ec submit --quest <quest> --part <part> [<ANSWER>]"},
 		{[]string{"help", "auth", "check"}, "ec auth check [flags]"},
@@ -68,7 +71,7 @@ func TestCommandHelp(t *testing.T) {
 				if strings.Contains(output.String(), "--dir") {
 					t.Fatal("root help includes the directory flag")
 				}
-				for _, command := range []string{"auth", "get", "status", "submit"} {
+				for _, command := range []string{"auth", "get", "status", "submit", "update"} {
 					if !strings.Contains(output.String(), "  "+command+" ") {
 						t.Fatalf("root help missing command %q: %s", command, output.String())
 					}
@@ -293,7 +296,7 @@ func TestCommandRejectsInvalidArgumentsWithoutSideEffects(t *testing.T) {
 
 func TestAuthCommandUsesInjectedInput(t *testing.T) {
 	setup(t)
-	cmd := newRootCommand("dev")
+	cmd := newRootCommand("dev", everybodycodes.NewClient(apiClient))
 	cmd.SetArgs([]string{"auth"})
 	cmd.SetIn(strings.NewReader("replacement-cookie\n"))
 	var output bytes.Buffer
@@ -311,7 +314,7 @@ func TestAuthCommandCancellation(t *testing.T) {
 	setup(t)
 	ctx, cancel := context.WithCancel(t.Context())
 	cancel()
-	cmd := newRootCommand("dev")
+	cmd := newRootCommand("dev", everybodycodes.NewClient(apiClient))
 	cmd.SetArgs([]string{"auth"})
 	cmd.SetIn(strings.NewReader("replacement-cookie\n"))
 	var output bytes.Buffer

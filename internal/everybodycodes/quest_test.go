@@ -1,4 +1,4 @@
-package cli
+package everybodycodes
 
 import (
 	"testing"
@@ -13,8 +13,8 @@ func TestParseQuestURL(t *testing.T) {
 		{"https://everybody.codes/event/2024/quests/12/", "2024", 12},
 		{"https://everybody.codes/event/2024/quests/01?foo=bar#part1", "2024", 1},
 	} {
-		got, err := parseQuestURL(tt.url)
-		if err != nil || got.year != tt.year || got.number != tt.number {
+		got, err := ParseQuestURL(tt.url)
+		if err != nil || got.Year != tt.year || got.Number != tt.number {
 			t.Errorf("parse %s = %v, %v", tt.url, got, err)
 		}
 	}
@@ -31,7 +31,7 @@ func TestParseQuestURL(t *testing.T) {
 		"https://everybody.codes/event/2024/quests/one",
 		"https://everybody.codes/event/2024/quests/1/extra",
 	} {
-		if _, err := parseQuestURL(raw); err == nil {
+		if _, err := ParseQuestURL(raw); err == nil {
 			t.Errorf("accepted invalid URL %q", raw)
 		}
 	}

@@ -1,4 +1,4 @@
-package cli
+package everybodycodes
 
 import (
 	"context"
@@ -9,9 +9,12 @@ import (
 	"os"
 	"path/filepath"
 	"strconv"
+
+	"github.com/chandlerklein/everybody-codes-cli/internal/session"
 )
 
-func initQuest(ctx context.Context, q quest, baseDir string, force bool, output io.Writer) error {
+// Download saves inputs for unlocked parts, preserving existing files unless forced.
+func (c *Client) Download(ctx context.Context, q Quest, baseDir string, force bool, output io.Writer) error {
 	if err := os.MkdirAll(baseDir, 0o755); err != nil {
 		return fmt.Errorf("create output directory: %w", err)
 	}
@@ -20,7 +23,7 @@ func initQuest(ctx context.Context, q quest, baseDir string, force bool, output 
 		return fmt.Errorf("open output directory: %w", err)
 	}
 	defer root.Close()
-	dir := filepath.Join(q.year, fmt.Sprintf("quest-%02d", q.number))
+	dir := filepath.Join(q.Year, fmt.Sprintf("quest-%02d", q.Number))
 	displayDir := filepath.Join(baseDir, dir)
 	var pending []int
 	for part := 1; part <= 3; part++ {
@@ -51,19 +54,19 @@ func initQuest(ctx context.Context, q quest, baseDir string, force bool, output 
 		_, err := fmt.Fprintf(output, "%s: all notes already exist\n", displayDir)
 		return err
 	}
-	cookie, err := loadSession()
+	cookie, err := session.Load()
 	if err != nil {
 		return err
 	}
 	// Keys need no seed. Fetch them alongside the encoded inputs.
 	ctx, cancel := context.WithCancel(ctx)
-	keysURL := fmt.Sprintf("%s/event/%s/quest/%d", apiBaseURL, q.year, q.number)
+	keysURL := fmt.Sprintf("%s/event/%s/quest/%d", apiBaseURL, q.Year, q.Number)
 	var keys map[string]json.RawMessage
 	var keysErr error
 	keysDone := make(chan struct{})
 	go func() {
 		defer close(keysDone)
-		keysErr = getJSON(ctx, keysURL, cookie, &keys)
+		keysErr = c.getJSON(ctx, keysURL, cookie, &keys)
 	}()
 	defer func() {
 		cancel()
@@ -73,15 +76,15 @@ func initQuest(ctx context.Context, q quest, baseDir string, force bool, output 
 	var user struct {
 		Seed *int64 `json:"seed"`
 	}
-	if err := getJSON(ctx, apiBaseURL+"/user/me", cookie, &user); err != nil {
+	if err := c.getJSON(ctx, apiBaseURL+"/user/me", cookie, &user); err != nil {
 		return fmt.Errorf("get user seed: %w", err)
 	}
 	if user.Seed == nil || *user.Seed < 0 {
 		return errors.New("user response must contain a nonnegative integer seed")
 	}
-	inputURL := fmt.Sprintf("https://everybody.codes/assets/%s/%d/input/%d.json", q.year, q.number, *user.Seed)
+	inputURL := fmt.Sprintf("https://everybody.codes/assets/%s/%d/input/%d.json", q.Year, q.Number, *user.Seed)
 	var inputs map[string]string
-	if err := getJSON(ctx, inputURL, cookie, &inputs); err != nil {
+	if err := c.getJSON(ctx, inputURL, cookie, &inputs); err != nil {
 		// Missing assets can return an HTML page with HTTP 200. In that
 		// case, use the API's result to identify an unavailable quest.
 		var syntaxErr *json.SyntaxError
