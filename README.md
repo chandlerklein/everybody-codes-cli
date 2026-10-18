@@ -1,6 +1,6 @@
 # Everybody Codes CLI
 
-`ec` downloads and decrypts your [Everybody Codes](https://everybody.codes/) quest inputs into year, quest, and part directories. It also saves your session cookie and reports local input readiness.
+`ec` downloads and decrypts your [Everybody Codes](https://everybody.codes/) quest inputs, submits answers, saves your session cookie, and reports local input readiness.
 
 ## Install
 
@@ -74,17 +74,14 @@ Each command creates:
 ```text
 2024/quest-01/
 ├── part-01/
-│   ├── answer.txt
 │   └── input/
 ├── part-02/
-│   ├── answer.txt
 │   └── input/
 └── part-03/
-    ├── answer.txt
     └── input/
 ```
 
-Each part gets an empty `answer.txt` and an `input/` directory containing `input-encoded.txt` with the encrypted input, plus `input.txt` when its decryption key is available. Existing `answer.txt` files are always preserved, including with `--force`. Quest numbers are padded to at least two digits.
+Each part gets an `input/` directory containing `input-encoded.txt` with the encrypted input, plus `input.txt` when its decryption key is available. Quest numbers are padded to at least two digits. `get` no longer creates `answer.txt`; any existing answer files are left untouched, including with `--force`.
 
 Both forms accept `--dir` before or after the quest arguments:
 
@@ -103,6 +100,24 @@ ec get -y 2024 -q 1 --force
 ```
 
 Existing files and directories are reused by default. Inputs are account-specific: use separate output directories for different accounts. Changing the session does not replace cached or decoded files unless you pass `--force`. If the server reports an unavailable quest, the error identifies the year and quest; the server may use the same response for missing events, missing quests, and inputs not yet available.
+
+## Submit answers
+
+Pass the answer as one argument or pipe your program's output:
+
+```sh
+ec submit -y 2024 -q 1 -p 1 1309
+ec submit --year 2024 --quest 01 --part 1 'text answer'
+./solve | ec submit -y 2024 -q 1 -p 1
+```
+
+`--quest`/`-q` and `--part`/`-p` are required positive decimal integers. Quest numbers may have leading zeros; part numbers must not (`1`, not `01`). `--year`/`-y` defaults to the current year, as with `get`.
+
+Answers are UTF-8 text, including numeric answers. Quote answers containing spaces; use `--` before an answer starting with a hyphen. If the argument is omitted, `submit` reads standard input until EOF and removes one final LF or CRLF, preserving other whitespace and line breaks. An explicit argument takes precedence over standard input. Empty or whitespace-only answers and invalid UTF-8 are rejected before any request.
+
+`submit` uses the same saved session or environment variable as `get`. It posts `{"answer":"<ANSWER>"}` to `https://api.everybody.codes/event/<YEAR>/quest/<QUEST>/part/<PART>/answer`. It does not require local quest files or create any files.
+
+For a 2xx response, the command prints the HTTP status and response body. Other responses exit with an error containing the HTTP status and response body, including unknown statuses. HTTP 409 Conflict reports that the part is already solved. Requests are not retried automatically; the API's response body provides the result of the submission.
 
 ## Show local status
 
@@ -125,7 +140,7 @@ Each local quest lists all three parts. Status checks the same zero-padded direc
 
 ## Help and shell completion
 
-Run `ec` or `ec --help` for available commands. Each command supports `--help`, including `ec get --help`, `ec auth check --help`, and `ec status --help`.
+Run `ec` or `ec --help` for available commands. Each command supports `--help`, including `ec get --help`, `ec submit --help`, `ec auth check --help`, and `ec status --help`.
 
 Use `ec completion --help` for Bash, Zsh, Fish, and PowerShell completion setup, then `ec completion <shell> --help` for installation instructions.
 

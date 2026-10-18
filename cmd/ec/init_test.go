@@ -137,7 +137,7 @@ func TestInitQuest(t *testing.T) {
 		dir := fmt.Sprintf("2024/quest-01/part-%02d/input", part)
 		assertFile(t, filepath.Join(dir, "input-encoded.txt"), testNotes[part-1].encoded)
 		assertFile(t, filepath.Join(dir, "input.txt"), testNotes[part-1].plain)
-		assertFile(t, filepath.Join(filepath.Dir(dir), "answer.txt"), "")
+		assertMissing(t, filepath.Join(filepath.Dir(dir), "answer.txt"))
 	}
 	wantCalls := []string{userURL, inputsURL, keysURL}
 	slices.Sort(api.calls)
@@ -148,11 +148,8 @@ func TestInitQuest(t *testing.T) {
 	if strings.Contains(output.String(), testSession) || strings.Contains(output.String(), testKey) {
 		t.Fatal("output contains session or AES key")
 	}
-	// A complete quest creates missing answers offline, even without a session.
+	// A complete quest needs no session and does not create answer files.
 	answerPath := "2024/quest-01/part-02/answer.txt"
-	if err := os.Remove(answerPath); err != nil {
-		t.Fatal(err)
-	}
 	if err := os.Remove(filepath.Join(os.Getenv("HOME"), ".config", "everybody-codes", "session")); err != nil {
 		t.Fatal(err)
 	}
@@ -162,7 +159,7 @@ func TestInitQuest(t *testing.T) {
 	if len(api.calls) != 3 {
 		t.Error("complete quest made additional HTTP requests")
 	}
-	assertFile(t, answerPath, "")
+	assertMissing(t, answerPath)
 }
 
 func TestInitQuestForceRefreshesCompletedInputs(t *testing.T) {
@@ -187,7 +184,7 @@ func TestInitQuestForceRefreshesCompletedInputs(t *testing.T) {
 				dir := fmt.Sprintf("2024/quest-01/part-%02d/input", part)
 				assertFile(t, filepath.Join(dir, "input-encoded.txt"), testNotes[part-1].encoded)
 				assertFile(t, filepath.Join(dir, "input.txt"), testNotes[part-1].plain)
-				assertFile(t, filepath.Join(filepath.Dir(dir), "answer.txt"), "")
+				assertMissing(t, filepath.Join(filepath.Dir(dir), "answer.txt"))
 			}
 			wantCalls := []string{userURL, inputsURL, keysURL}
 			slices.Sort(api.calls)

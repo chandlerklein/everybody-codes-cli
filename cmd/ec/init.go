@@ -109,10 +109,6 @@ func initQuest(ctx context.Context, q quest, baseDir string, force bool, output 
 		if err := root.MkdirAll(inputDir, 0o755); err != nil {
 			return fmt.Errorf("create input directory: %w", err)
 		}
-		answerPath := filepath.Join(filepath.Dir(inputDir), "answer.txt")
-		if err := createAnswer(root, answerPath); err != nil {
-			return fmt.Errorf("create part %d answer: %w", part, err)
-		}
 		inputPath := filepath.Join(inputDir, "input.txt")
 		var info os.FileInfo
 		if force {
@@ -313,7 +309,7 @@ func getJSON(ctx context.Context, endpoint string, cookie *http.Cookie, target a
 	}
 	defer resp.Body.Close()
 	if resp.StatusCode != http.StatusOK {
-		return &httpStatusError{endpoint: endpoint, statusCode: resp.StatusCode, status: resp.Status}
+		return &httpStatusError{method: http.MethodGet, endpoint: endpoint, statusCode: resp.StatusCode, status: resp.Status}
 	}
 	body, err := io.ReadAll(io.LimitReader(resp.Body, maxJSONResponseBytes+1))
 	if err != nil {
@@ -343,17 +339,6 @@ func replaceFile(root *os.Root, path string, data []byte) error {
 		return err
 	}
 	return root.Rename(temp, path)
-}
-
-// Existing answer entries, including directories and dangling symlinks, are
-// always preserved. Exclusive creation also protects against concurrent runs.
-func createAnswer(root *os.Root, path string) error {
-	if _, err := root.Lstat(path); err == nil {
-		return nil
-	} else if !errors.Is(err, os.ErrNotExist) {
-		return err
-	}
-	return writeNotes(root, path, nil)
 }
 
 // Exclusive creation also preserves notes written by another ec process.
