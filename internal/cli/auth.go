@@ -1,37 +1,17 @@
-package main
+package cli
 
 import (
 	"bufio"
 	"context"
-	"crypto/rand"
 	"errors"
 	"fmt"
 	"io"
 	"net/http"
 	"os"
-	"path/filepath"
 	"strings"
 
 	"golang.org/x/term"
 )
-
-// Retain the HTTP status so callers can distinguish expired sessions from
-// temporary server failures without inspecting the text of an error.
-type httpStatusError struct {
-	method     string
-	endpoint   string
-	statusCode int
-	status     string
-	body       string
-}
-
-func (e *httpStatusError) Error() string {
-	message := fmt.Sprintf("%s %s: HTTP %s", e.method, e.endpoint, e.status)
-	if e.body != "" {
-		message += ": " + e.body
-	}
-	return message
-}
 
 func runAuthCheck(ctx context.Context, output io.Writer) error {
 	cookie, err := loadSession()
@@ -156,34 +136,4 @@ func readCookieLine(input io.Reader, terminal bool) (string, error) {
 		}
 		value = append(value, ch)
 	}
-}
-
-func saveSessionCookie(value string) error {
-	home, err := os.UserHomeDir()
-	if err != nil {
-		return fmt.Errorf("find home directory: %w", err)
-	}
-	dir := filepath.Join(home, ".config", "everybody-codes")
-	if err := os.MkdirAll(dir, 0o700); err != nil {
-		return fmt.Errorf("create session directory: %w", err)
-	}
-	root, err := os.OpenRoot(dir)
-	if err != nil {
-		return fmt.Errorf("open session directory: %w", err)
-	}
-	defer root.Close()
-	name := ".session-" + rand.Text() + ".tmp"
-	file, err := root.OpenFile(name, os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0o600)
-	if err != nil {
-		return fmt.Errorf("create session file: %w", err)
-	}
-	defer root.Remove(name)
-	_, writeErr := io.WriteString(file, value+"\n")
-	if err := errors.Join(writeErr, file.Close()); err != nil {
-		return fmt.Errorf("write session file: %w", err)
-	}
-	if err := root.Rename(name, "session"); err != nil {
-		return fmt.Errorf("save session file: %w", err)
-	}
-	return nil
 }
