@@ -1,0 +1,190 @@
+package main
+
+import (
+	"context"
+	"encoding/json"
+	"errors"
+	"fmt"
+	"io"
+	"net/http"
+	"net/url"
+	"os"
+	"path/filepath"
+	"regexp"
+	"strconv"
+	"strings"
+	"time"
+)
+
+var questPath = regexp.MustCompile(`^/event/([A-Za-z0-9][A-Za-z0-9_-]*)/quests/([0-9]+)/?$`)
+
+type quest struct {
+	event  string
+	number int
+}
+
+func parseQuestURL(raw string) (quest, error) {
+	u, err := url.Parse(raw)
+	if err != nil || u.Scheme != "https" || u.Host != "everybody.codes" || u.User != nil {
+		return quest{}, errors.New("expected a quest URL: https://everybody.codes/event/<EVENT>/quests/<QUEST>")
+	}
+	match := questPath.FindStringSubmatch(u.EscapedPath())
+	if match == nil {
+		return quest{}, errors.New("expected a quest URL: https://everybody.codes/event/<EVENT>/quests/<QUEST>")
+	}
+	number, err := strconv.Atoi(match[2])
+	if err != nil || number < 1 {
+		return quest{}, errors.New("quest number must be a positive integer")
+	}
+	return quest{event: match[1], number: number}, nil
+}
+
+func loadSession() (*http.Cookie, error) {
+	home, err := os.UserHomeDir()
+	if err != nil {
+		return nil, fmt.Errorf("find home directory: %w", err)
+	}
+	path := filepath.Join(home, ".config", "everybody-codes", "session")
+	value, err := os.ReadFile(path)
+	if err != nil {
+		return nil, fmt.Errorf("read session file %s: %w", path, err)
+	}
+	cookie := &http.Cookie{Name: "everybody-codes", Value: strings.TrimSpace(string(value))}
+	if cookie.Value == "" || cookie.Valid() != nil {
+		return nil, fmt.Errorf("session file %s must contain a valid raw cookie value", path)
+	}
+	return cookie, nil
+}
+
+func initQuest(ctx context.Context, q quest, output io.Writer) error {
+	dir := filepath.Join(q.event, fmt.Sprintf("quest-%02d", q.number))
+	var pending []int
+	for part := 1; part <= 3; part++ {
+		inputDir := partInputDir(dir, part)
+		if err := os.MkdirAll(inputDir, 0o755); err != nil {
+			return fmt.Errorf("create input directory: %w", err)
+		}
+		info, err := os.Stat(filepath.Join(inputDir, "notes.txt"))
+		switch {
+		case errors.Is(err, os.ErrNotExist):
+			pending = append(pending, part)
+		case err != nil:
+			return fmt.Errorf("check part %d notes: %w", part, err)
+		case !info.Mode().IsRegular():
+			return fmt.Errorf("part %d notes.txt must be a regular file", part)
+		}
+	}
+	if len(pending) == 0 {
+		_, err := fmt.Fprintf(output, "%s: all notes already exist\n", dir)
+		return err
+	}
+	cookie, err := loadSession()
+	if err != nil {
+		return err
+	}
+	var user struct {
+		Seed *int64 `json:"seed"`
+	}
+	if err := getJSON(ctx, "https://api.everybody.codes/user/me", cookie, &user); err != nil {
+		return fmt.Errorf("get user seed: %w", err)
+	}
+	if user.Seed == nil || *user.Seed < 0 {
+		return errors.New("user response must contain a nonnegative integer seed")
+	}
+	inputURL := fmt.Sprintf("https://everybody.codes/assets/%s/%d/input/%d.json", q.event, q.number, *user.Seed)
+	var inputs map[string]string
+	if err := getJSON(ctx, inputURL, cookie, &inputs); err != nil {
+		return fmt.Errorf("get encoded notes: %w", err)
+	}
+	for _, part := range pending {
+		encoded, ok := inputs[strconv.Itoa(part)]
+		if !ok || encoded == "" {
+			return fmt.Errorf("input response is missing encoded notes for part %d", part)
+		}
+		path := filepath.Join(partInputDir(dir, part), "notes-encoded.txt")
+		if err := os.WriteFile(path, []byte(encoded), 0o644); err != nil {
+			return fmt.Errorf("write encoded notes for part %d: %w", part, err)
+		}
+	}
+	keysURL := fmt.Sprintf("https://api.everybody.codes/event/%s/quest/%d", q.event, q.number)
+	var keys map[string]json.RawMessage
+	if err := getJSON(ctx, keysURL, cookie, &keys); err != nil {
+		return fmt.Errorf("get quest keys: %w", err)
+	}
+	for _, part := range pending {
+		var key string
+		if raw, ok := keys[fmt.Sprintf("key%d", part)]; ok {
+			if err := json.Unmarshal(raw, &key); err != nil {
+				return fmt.Errorf("key%d must be a string or null", part)
+			}
+		}
+		if key == "" {
+			if _, err := fmt.Fprintf(output, "Part %d: encoded notes saved; key not available yet\n", part); err != nil {
+				return err
+			}
+			continue
+		}
+		inputDir := partInputDir(dir, part)
+		encoded, err := os.ReadFile(filepath.Join(inputDir, "notes-encoded.txt"))
+		if err != nil {
+			return fmt.Errorf("read encoded notes for part %d: %w", part, err)
+		}
+		notes, err := decryptNotes(string(encoded), key)
+		if err != nil {
+			return fmt.Errorf("decode part %d notes: %w", part, err)
+		}
+		if err := writeNotes(filepath.Join(inputDir, "notes.txt"), notes); err != nil {
+			return fmt.Errorf("write part %d notes: %w", part, err)
+		}
+		if _, err := fmt.Fprintf(output, "Part %d: decoded notes saved\n", part); err != nil {
+			return err
+		}
+	}
+	_, err = fmt.Fprintf(output, "Initialized %s\n", dir)
+	return err
+}
+
+func partInputDir(dir string, part int) string {
+	return filepath.Join(dir, fmt.Sprintf("part-%02d", part), "input")
+}
+
+func getJSON(ctx context.Context, endpoint string, cookie *http.Cookie, target any) error {
+	ctx, cancel := context.WithTimeout(ctx, 30*time.Second)
+	defer cancel()
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, endpoint, nil)
+	if err != nil {
+		return err
+	}
+	req.AddCookie(cookie)
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		return err
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		return fmt.Errorf("GET %s: HTTP %s", endpoint, resp.Status)
+	}
+	if err := json.NewDecoder(resp.Body).Decode(target); err != nil {
+		return fmt.Errorf("invalid JSON from %s: %w", endpoint, err)
+	}
+	return nil
+}
+
+// Exclusive creation also preserves notes written by another ec process.
+func writeNotes(path string, notes []byte) error {
+	f, err := os.OpenFile(path, os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0o644)
+	if errors.Is(err, os.ErrExist) {
+		return nil
+	}
+	if err != nil {
+		return err
+	}
+	_, writeErr := f.Write(notes)
+	closeErr := f.Close()
+	if err := errors.Join(writeErr, closeErr); err != nil {
+		// Do not leave an incomplete notes.txt that a later run would skip.
+		_ = os.Remove(path)
+		return err
+	}
+	return nil
+}
