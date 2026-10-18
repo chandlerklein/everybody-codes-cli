@@ -4,9 +4,11 @@ import (
 	"bytes"
 	"context"
 	"errors"
+	"fmt"
 	"io"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 )
@@ -16,10 +18,11 @@ func TestCommandHelp(t *testing.T) {
 		args []string
 		want string
 	}{
-		{[]string{"--help"}, "ec <quest-url>"},
-		{[]string{"-h"}, "ec <quest-url>"},
-		{[]string{"--dir", "elsewhere", "--help"}, "ec <quest-url>"},
-		{[]string{testURL, "-h"}, "ec <quest-url>"},
+		{[]string{"--help"}, "ec [<quest-url> | --event <event> --quest <quest>]"},
+		{[]string{"-h"}, "ec [<quest-url>"},
+		{[]string{"--dir", "elsewhere", "--help"}, "ec [<quest-url>"},
+		{[]string{testURL, "-h"}, "ec [<quest-url>"},
+		{[]string{"-e", "2024", "-q", "01", "--help"}, "ec -e 2024 -q 01"},
 		{[]string{"auth", "--help"}, "ec auth [flags]"},
 		{[]string{"auth", "check", "--help"}, "ec auth check [flags]"},
 		{[]string{"status", "--help"}, "ec status [flags]"},
@@ -33,12 +36,109 @@ func TestCommandHelp(t *testing.T) {
 			if !strings.Contains(output.String(), tt.want) {
 				t.Fatalf("help = %q, want %q", output.String(), tt.want)
 			}
+			if strings.Contains(tt.want, "quest-url") {
+				for _, flag := range []string{"-e, --event", "-q, --quest", "leading zeros"} {
+					if !strings.Contains(output.String(), flag) {
+						t.Fatalf("help missing %q: %s", flag, output.String())
+					}
+				}
+			}
 			if tt.args[0] == "auth" && strings.Contains(output.String(), "--dir") {
 				t.Fatal("auth help includes the download/status directory flag")
+			}
+			if tt.args[0] == "auth" || tt.args[0] == "status" {
+				if strings.Contains(output.String(), "--event") || strings.Contains(output.String(), "--quest") {
+					t.Fatal("subcommand help includes quest selection flags")
+				}
 			}
 			if strings.Contains(output.String(), "--version") {
 				t.Fatal("help includes a version flag")
 			}
+		})
+	}
+}
+
+func TestCommandQuestFlags(t *testing.T) {
+	for _, tt := range []struct {
+		args   []string
+		number int
+	}{
+		{[]string{"-e", "2024", "-q", "1"}, 1},
+		{[]string{"--event", "2024", "--quest", "01"}, 1},
+		{[]string{"-q", "08", "-e", "2024"}, 8},
+		{[]string{"--event=2024", "--quest=09"}, 9},
+		{[]string{"-e2024", "-q00010"}, 10},
+	} {
+		t.Run(strings.Join(tt.args, " "), func(t *testing.T) {
+			api := setup(t)
+			keysEndpoint := fmt.Sprintf("%s/event/2024/quest/%d", apiBaseURL, tt.number)
+			inputsEndpoint := fmt.Sprintf("https://everybody.codes/assets/2024/%d/input/8.json", tt.number)
+			api.bodies[keysEndpoint] = api.bodies[keysURL]
+			api.bodies[inputsEndpoint] = api.bodies[inputsURL]
+			var output bytes.Buffer
+			args := append(slices.Clone(tt.args), "--dir", "solutions")
+			if err := run(t.Context(), args, &output); err != nil {
+				t.Fatal(err)
+			}
+			for part := 1; part <= 3; part++ {
+				dir := fmt.Sprintf("solutions/2024/quest-%02d/part-%02d/input", tt.number, part)
+				assertFile(t, filepath.Join(dir, "input-encoded.txt"), testNotes[part-1].encoded)
+				assertFile(t, filepath.Join(dir, "input.txt"), testNotes[part-1].plain)
+			}
+			wantCalls := []string{userURL, inputsEndpoint, keysEndpoint}
+			slices.Sort(api.calls)
+			slices.Sort(wantCalls)
+			if !slices.Equal(api.calls, wantCalls) {
+				t.Fatalf("requests = %v, want %v", api.calls, wantCalls)
+			}
+			// The equivalent URL reuses the same files and needs no more requests.
+			api.calls = nil
+			url := fmt.Sprintf("https://everybody.codes/event/2024/quests/%d", tt.number)
+			if err := run(t.Context(), []string{url, "--dir", "solutions"}, io.Discard); err != nil {
+				t.Fatal(err)
+			}
+			if len(api.calls) != 0 {
+				t.Fatal("URL did not reuse the shorthand's downloaded inputs")
+			}
+		})
+	}
+}
+
+func TestCommandRejectsInvalidQuestFlagsWithoutSideEffects(t *testing.T) {
+	for _, tt := range []struct {
+		args []string
+		want string
+	}{
+		{[]string{"-e", "2024"}, "--event and --quest must be supplied together"},
+		{[]string{"-q", "1"}, "--event and --quest must be supplied together"},
+		{[]string{testURL, "-e", "2024", "-q", "1"}, "use either a quest URL"},
+		{[]string{"-e", "", "-q", "1"}, "event must be"},
+		{[]string{"-e", "../2024", "-q", "1"}, "event must be"},
+		{[]string{"-e", "2024/quests/1", "-q", "1"}, "event must be"},
+		{[]string{"-e", "2024?foo", "-q", "1"}, "event must be"},
+		{[]string{"-e", "2024", "-q", ""}, "quest number must be"},
+		{[]string{"-e", "2024", "-q", "0"}, "quest number must be"},
+		{[]string{"-e", "2024", "-q", "-1"}, "quest number must be"},
+		{[]string{"-e", "2024", "-q", "one"}, "quest number must be"},
+		{[]string{"-e", "2024", "-q", "1.5"}, "quest number must be"},
+		{[]string{"-e", "2024", "-q", "0x01"}, "quest number must be"},
+		{[]string{"-e", "2024", "-q", "999999999999999999999"}, "quest number must be"},
+		{[]string{"-e", "2024", "-q"}, "flag needs an argument"},
+		{[]string{"-e", "2024", "-q", "1", "--dir="}, "--dir requires a nonempty directory"},
+		{[]string{"auth", "-e", "2024", "-q", "1"}, "unsupported auth flags"},
+		{[]string{"status", "-e", "2024", "-q", "1"}, "unknown shorthand flag"},
+	} {
+		t.Run(strings.Join(tt.args, " "), func(t *testing.T) {
+			api := setup(t)
+			var output bytes.Buffer
+			err := run(t.Context(), tt.args, &output)
+			if err == nil || !strings.Contains(err.Error(), tt.want) {
+				t.Fatalf("error = %v, want %q", err, tt.want)
+			}
+			if len(api.calls) != 0 || output.Len() != 0 {
+				t.Fatalf("invalid arguments caused requests %v or output %q", api.calls, output.String())
+			}
+			assertMissing(t, "2024")
 		})
 	}
 }

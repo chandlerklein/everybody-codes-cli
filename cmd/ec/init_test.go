@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -507,6 +508,7 @@ func TestInitQuestFailures(t *testing.T) {
 		{"input unavailable", inputsURL, "", "HTTP 404", 404},
 		{"keys unavailable", keysURL, "", "HTTP 503", 503},
 		{"malformed JSON", userURL, "<html>", "invalid JSON", 0},
+		{"malformed inputs for valid quest", inputsURL, "<html>", "invalid JSON", 0},
 		{"missing seed", userURL, `{}`, "seed", 0},
 		{"null seed", userURL, `{"seed":null}`, "seed", 0},
 		{"negative seed", userURL, `{"seed":-1}`, "seed", 0},
@@ -529,6 +531,71 @@ func TestInitQuestFailures(t *testing.T) {
 				t.Error("session cookie was exposed")
 			}
 			assertMissing(t, "2024/quest-01/part-01/input/input.txt")
+		})
+	}
+}
+
+func TestInitQuestMissingEventOrQuest(t *testing.T) {
+	for _, q := range []quest{{event: "2099", number: 1}, {event: "2024", number: 999}} {
+		for _, statusCode := range []int{http.StatusNotFound, http.StatusUnprocessableEntity} {
+			for _, failure := range []string{"inputs", "keys", "cached keys", "HTML inputs"} {
+				for _, useURL := range []bool{false, true} {
+					name := fmt.Sprintf("%s/%d/%d/%s/url=%t", q.event, q.number, statusCode, failure, useURL)
+					t.Run(name, func(t *testing.T) {
+						api := setup(t)
+						keysEndpoint := fmt.Sprintf("%s/event/%s/quest/%d", apiBaseURL, q.event, q.number)
+						inputsEndpoint := fmt.Sprintf("https://everybody.codes/assets/%s/%d/input/8.json", q.event, q.number)
+						api.bodies[keysEndpoint] = api.bodies[keysURL]
+						api.bodies[inputsEndpoint] = api.bodies[inputsURL]
+						if failure == "inputs" {
+							api.statuses[inputsEndpoint] = statusCode
+						} else {
+							api.statuses[keysEndpoint] = statusCode
+						}
+						if failure == "HTML inputs" {
+							api.bodies[inputsEndpoint] = "<!doctype html><html>Not found</html>"
+						}
+						if failure == "cached keys" {
+							for part := 1; part <= 3; part++ {
+								path := fmt.Sprintf("%s/quest-%02d/part-%02d/input/input-encoded.txt", q.event, q.number, part)
+								writeTestFile(t, path, testNotes[part-1].encoded)
+							}
+						}
+						args := []string{"-e", q.event, "-q", fmt.Sprint(q.number)}
+						if useURL {
+							args = []string{fmt.Sprintf("https://everybody.codes/event/%s/quests/%d", q.event, q.number)}
+						}
+						err := run(t.Context(), args, io.Discard)
+						want := fmt.Sprintf("event %s or quest %d does not exist or is not available yet", q.event, q.number)
+						if err == nil || !strings.Contains(err.Error(), want) {
+							t.Fatalf("error = %v, want %q", err, want)
+						}
+						var status *httpStatusError
+						if !errors.As(err, &status) || status.statusCode != statusCode {
+							t.Fatalf("error did not preserve HTTP status %d: %v", statusCode, err)
+						}
+						for part := 1; part <= 3; part++ {
+							assertMissing(t, fmt.Sprintf("%s/quest-%02d/part-%02d/input/input.txt", q.event, q.number, part))
+						}
+					})
+				}
+			}
+		}
+	}
+}
+
+func TestInitQuestDoesNotReportOtherFailuresAsMissing(t *testing.T) {
+	for _, status := range []int{http.StatusUnauthorized, http.StatusForbidden, http.StatusInternalServerError, http.StatusServiceUnavailable} {
+		t.Run(fmt.Sprint(status), func(t *testing.T) {
+			api := setup(t)
+			api.statuses[keysURL] = status
+			err := run(t.Context(), []string{"-e", "2024", "-q", "1"}, io.Discard)
+			if err == nil || !strings.Contains(err.Error(), fmt.Sprintf("HTTP %d", status)) {
+				t.Fatalf("error = %v, want HTTP %d", err, status)
+			}
+			if strings.Contains(err.Error(), "does not exist") {
+				t.Fatalf("misreported HTTP %d as a missing quest: %v", status, err)
+			}
 		})
 	}
 }

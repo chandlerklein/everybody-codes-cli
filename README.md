@@ -67,6 +67,17 @@ Run from the directory where you keep your quest solutions:
 ec https://everybody.codes/event/2024/quests/1
 ```
 
+Or specify the event and quest directly:
+
+```sh
+ec -e 2024 -q 1
+ec --event 2024 --quest 01
+```
+
+Both forms download the same inputs as the URL above. `-e` is short for `--event`, and `-q` is short for `--quest`. Supply both flags together, without a quest URL. Quest numbers are decimal and may have leading zeros, so `01` means quest 1 and `08` means quest 8. Both forms also support `--dir`.
+
+If the server reports a missing event or quest, `ec` exits with an error identifying the requested event and quest. The server does not distinguish missing events from missing quests; inputs that are not available yet can produce the same response.
+
 This creates:
 
 ```text
