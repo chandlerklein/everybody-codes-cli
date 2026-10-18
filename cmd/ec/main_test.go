@@ -19,11 +19,13 @@ func TestCommandHelp(t *testing.T) {
 		args []string
 		want string
 	}{
-		{[]string{"--help"}, "ec [<quest-url> | --event <event> --quest <quest>]"},
-		{[]string{"-h"}, "ec [<quest-url>"},
-		{[]string{"--dir", "elsewhere", "--help"}, "ec [<quest-url>"},
-		{[]string{testURL, "-h"}, "ec [<quest-url>"},
-		{[]string{"-e", "2024", "-q", "01", "--help"}, "ec -e 2024 -q 01"},
+		{[]string{"--help"}, "ec [command]"},
+		{[]string{"-h"}, "ec [command]"},
+		{[]string{"get", "--help"}, "ec get [<quest-url> | --event <event> --quest <quest>]"},
+		{[]string{"get", "--dir", "elsewhere", "--help"}, "ec get [<quest-url>"},
+		{[]string{"get", testURL, "-h"}, "ec get [<quest-url>"},
+		{[]string{"get", "-e", "2024", "-q", "01", "--help"}, "ec get -e 2024 -q 01"},
+		{[]string{"help", "get"}, "ec get [<quest-url>"},
 		{[]string{"auth", "--help"}, "ec auth [flags]"},
 		{[]string{"auth", "check", "--help"}, "ec auth check [flags]"},
 		{[]string{"status", "--help"}, "ec status [flags]"},
@@ -37,8 +39,8 @@ func TestCommandHelp(t *testing.T) {
 			if !strings.Contains(output.String(), tt.want) {
 				t.Fatalf("help = %q, want %q", output.String(), tt.want)
 			}
-			if strings.Contains(tt.want, "quest-url") {
-				for _, flag := range []string{"-e, --event", "-q, --quest", "leading zeros"} {
+			if slices.Contains(tt.args, "get") {
+				for _, flag := range []string{"-e, --event", "-q, --quest", "--dir", "leading zeros"} {
 					if !strings.Contains(output.String(), flag) {
 						t.Fatalf("help missing %q: %s", flag, output.String())
 					}
@@ -47,13 +49,26 @@ func TestCommandHelp(t *testing.T) {
 			if tt.args[0] == "auth" && strings.Contains(output.String(), "--dir") {
 				t.Fatal("auth help includes the download/status directory flag")
 			}
-			if tt.args[0] == "auth" || tt.args[0] == "status" {
+			if !slices.Contains(tt.args, "get") {
 				if strings.Contains(output.String(), "--event") || strings.Contains(output.String(), "--quest") {
-					t.Fatal("subcommand help includes quest selection flags")
+					t.Fatal("help outside get includes quest selection flags")
 				}
 			}
-			if strings.Contains(tt.want, "quest-url") && !strings.Contains(output.String(), "--version") {
+			if tt.want == "ec [command]" {
+				if strings.Contains(output.String(), "--dir") {
+					t.Fatal("root help includes the directory flag")
+				}
+				for _, command := range []string{"auth", "get", "status"} {
+					if !strings.Contains(output.String(), "  "+command+" ") {
+						t.Fatalf("root help missing command %q: %s", command, output.String())
+					}
+				}
+			}
+			if tt.want == "ec [command]" && !strings.Contains(output.String(), "--version") {
 				t.Fatal("root help missing the version flag")
+			}
+			if tt.want != "ec [command]" && strings.Contains(output.String(), "--version") {
+				t.Fatal("subcommand help includes the root version flag")
 			}
 		})
 	}
@@ -130,7 +145,8 @@ func TestCommandQuestFlags(t *testing.T) {
 			api.bodies[keysEndpoint] = api.bodies[keysURL]
 			api.bodies[inputsEndpoint] = api.bodies[inputsURL]
 			var output bytes.Buffer
-			args := append(slices.Clone(tt.args), "--dir", "solutions")
+			args := append([]string{"get"}, tt.args...)
+			args = append(args, "--dir", "solutions")
 			if err := run(t.Context(), args, &output); err != nil {
 				t.Fatal(err)
 			}
@@ -148,7 +164,7 @@ func TestCommandQuestFlags(t *testing.T) {
 			// The equivalent URL reuses the same files and needs no more requests.
 			api.calls = nil
 			url := fmt.Sprintf("https://everybody.codes/event/2024/quests/%d", tt.number)
-			if err := run(t.Context(), []string{url, "--dir", "solutions"}, io.Discard); err != nil {
+			if err := run(t.Context(), []string{"get", url, "--dir", "solutions"}, io.Discard); err != nil {
 				t.Fatal(err)
 			}
 			if len(api.calls) != 0 {
@@ -185,7 +201,11 @@ func TestCommandRejectsInvalidQuestFlagsWithoutSideEffects(t *testing.T) {
 		t.Run(strings.Join(tt.args, " "), func(t *testing.T) {
 			api := setup(t)
 			var output bytes.Buffer
-			err := run(t.Context(), tt.args, &output)
+			args := tt.args
+			if args[0] != "auth" && args[0] != "status" {
+				args = append([]string{"get"}, args...)
+			}
+			err := run(t.Context(), args, &output)
 			if err == nil || !strings.Contains(err.Error(), tt.want) {
 				t.Fatalf("error = %v, want %q", err, tt.want)
 			}
@@ -199,6 +219,15 @@ func TestCommandRejectsInvalidQuestFlagsWithoutSideEffects(t *testing.T) {
 
 func TestCommandRejectsInvalidArgumentsWithoutSideEffects(t *testing.T) {
 	for _, args := range [][]string{
+		{testURL},
+		{"--", testURL},
+		{testURL, "--dir", "elsewhere"},
+		{"-e", "2024", "-q", "1"},
+		{"--event", "2024", "--quest", "1"},
+		{"--dir", "elsewhere"},
+		{"get"},
+		{"get", testURL, "extra"},
+		{"get", "auth"},
 		{"unknown", testURL},
 		{testURL, "extra"},
 		{"init", testURL},
