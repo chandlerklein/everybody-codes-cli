@@ -112,7 +112,7 @@ func TestSubmitArgumentsAndInput(t *testing.T) {
 			if request.calls != 1 || request.url != wantURL || request.answer != tt.answer {
 				t.Fatalf("calls = %d, URL = %s, answer matches = %t", request.calls, request.url, request.answer == tt.answer)
 			}
-			wantOutput := "HTTP 200 OK\n{\"correct\":false}\n"
+			wantOutput := fmt.Sprintf("Year %s, quest %d, part %d\nHTTP 200 OK\n{\"correct\":false}\n", tt.year, tt.quest, tt.part)
 			if got, want := output.String(), wantOutput; got != want {
 				t.Fatalf("output = %q, want %q", got, want)
 			}
@@ -130,9 +130,9 @@ func TestSubmitRejectsInvalidArgumentsBeforeRequests(t *testing.T) {
 		input string
 		want  string
 	}{
-		{nil, "1309", "required flag(s)"},
-		{[]string{"-q1", "1309"}, "", `"part"`},
-		{[]string{"-p1", "1309"}, "", `"quest"`},
+		{nil, "1309", "--quest (-q) and --part (-p) required"},
+		{[]string{"-q1", "1309"}, "", "--part (-p) required"},
+		{[]string{"-p1", "1309"}, "", "--quest (-q) required"},
 		{[]string{"-q1", "-p1", "1309", "extra"}, "", "at most 1 arg(s)"},
 		{[]string{"-q1", "-p1", "--year="}, "1309", "year must be"},
 		{[]string{"-q1", "-p1", "--year=../2024"}, "1309", "year must be"},
