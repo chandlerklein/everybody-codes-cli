@@ -113,9 +113,9 @@ ec submit --year 2024 --quest 01 --part 1 'text answer'
 
 Answers are UTF-8 text, including numeric answers. Quote answers containing spaces; use `--` before an answer starting with a hyphen. If the argument is omitted, `submit` reads standard input until EOF and removes one final LF or CRLF, preserving other whitespace and line breaks. An explicit argument takes precedence over standard input. Empty or whitespace-only answers and invalid UTF-8 are rejected before any request.
 
-`submit` uses the same saved session or environment variable as `get`. It posts `{"answer":"<ANSWER>"}` to `https://api.everybody.codes/event/<YEAR>/quest/<QUEST>/part/<PART>/answer`. It does not require local quest files or create any files.
+`submit` uses the same saved session or environment variable as `get`. It posts `{"answer":"<ANSWER>"}` to `https://api.everybody.codes/event/<YEAR>/quest/<QUEST>/part/<PART>/answer`. It does not require local quest files.
 
-For a 2xx response, the command prints the HTTP status and response body. When the API confirms `"correct": true`, it also prints a congratulations message identifying the year, quest, and part. Other responses exit with an error containing the HTTP status and response body, including unknown statuses. HTTP 409 Conflict reports that the part is already solved. Requests are not retried automatically; the API's response body provides the result of the submission.
+For a 2xx response, the command prints the HTTP status and response body. When the API confirms `"correct": true`, it prints a congratulations message and runs `get` for the same quest in the current directory, downloading newly unlocked inputs and preserving existing files. A download failure reports that the answer was accepted. Other responses exit with an error containing the HTTP status and response body, including unknown statuses. HTTP 409 Conflict reports that the part is already solved. Requests are not retried automatically; the API's response body provides the result of the submission.
 
 ## Show local status
 

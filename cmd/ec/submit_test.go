@@ -19,13 +19,21 @@ type submissionRequest struct {
 	calls  int
 	url    string
 	answer string
+	inputs *testAPI
 }
 
 func setupSubmission(t *testing.T, status int, body string) *submissionRequest {
 	t.Helper()
-	setup(t)
-	request := &submissionRequest{}
+	api := setup(t)
+	downloadTransport := apiClient.Transport
+	request := &submissionRequest{inputs: api}
 	apiClient.Transport = roundTripFunc(func(r *http.Request) (*http.Response, error) {
+		if r.Method == http.MethodGet {
+			if request.calls != 1 {
+				t.Error("download started before submission completed")
+			}
+			return downloadTransport.RoundTrip(r)
+		}
 		request.calls++
 		request.url = r.URL.String()
 		if r.Method != http.MethodPost {
@@ -98,7 +106,7 @@ func TestSubmitArgumentsAndInput(t *testing.T) {
 		{"long stdin", []string{"-y2024", "-q1", "-p1"}, strings.Repeat("é", 40000) + "\n", "2024", 1, 1, strings.Repeat("é", 40000)},
 	} {
 		t.Run(tt.name, func(t *testing.T) {
-			request := setupSubmission(t, http.StatusOK, `{"correct":true}`)
+			request := setupSubmission(t, http.StatusOK, `{"correct":false}`)
 			var output bytes.Buffer
 			if err := executeSubmit(t.Context(), tt.args, strings.NewReader(tt.input), &output); err != nil {
 				t.Fatal(err)
@@ -107,7 +115,7 @@ func TestSubmitArgumentsAndInput(t *testing.T) {
 			if request.calls != 1 || request.url != wantURL || request.answer != tt.answer {
 				t.Fatalf("calls = %d, URL = %s, answer matches = %t", request.calls, request.url, request.answer == tt.answer)
 			}
-			wantOutput := fmt.Sprintf("HTTP 200 OK\n{\"correct\":true}\nCongratulations! You solved part %d of quest %d (%s).\n", tt.part, tt.quest, tt.year)
+			wantOutput := "HTTP 200 OK\n{\"correct\":false}\n"
 			if got, want := output.String(), wantOutput; got != want {
 				t.Fatalf("output = %q, want %q", got, want)
 			}
@@ -240,18 +248,101 @@ func TestSubmitCongratulationsRequiresConfirmedCorrectAnswer(t *testing.T) {
 		{"error with correct field", 500, `{"correct":true}`, false},
 	} {
 		t.Run(tt.name, func(t *testing.T) {
-			setupSubmission(t, tt.status, tt.body)
+			request := setupSubmission(t, tt.status, tt.body)
 			var output bytes.Buffer
 			err := executeSubmit(t.Context(), []string{"-y2024", "-q1", "-p2", "5560"}, strings.NewReader(""), &output)
 			if (err != nil) != (tt.status >= 300) {
 				t.Fatalf("error = %v, status = %d", err, tt.status)
 			}
 			message := "Congratulations! You solved part 2 of quest 1 (2024).\n"
-			if strings.Contains(output.String(), "Congratulations!") != tt.want || (tt.want && !strings.HasSuffix(output.String(), message)) {
+			if strings.Contains(output.String(), "Congratulations!") != tt.want || (tt.want && !strings.Contains(output.String(), message)) {
 				t.Fatalf("output = %q, want congratulations = %t", output.String(), tt.want)
+			}
+			wantDownloads := 0
+			if tt.want {
+				wantDownloads = 3
+			}
+			if len(request.inputs.calls) != wantDownloads {
+				t.Fatalf("download requests = %v, want %d", request.inputs.calls, wantDownloads)
 			}
 		})
 	}
+}
+
+func TestSubmitDownloadsNewlyUnlockedInputs(t *testing.T) {
+	for _, tt := range []struct {
+		year        string
+		quest, part int
+	}{
+		{"2024", 1, 1},
+		{"story-1", 8, 2},
+		{"2024", 1, 3},
+	} {
+		t.Run(fmt.Sprintf("%s/quest-%d/part-%d", tt.year, tt.quest, tt.part), func(t *testing.T) {
+			request := setupSubmission(t, http.StatusOK, `{"correct":true}`)
+			questDir := fmt.Sprintf("%s/quest-%02d", tt.year, tt.quest)
+			for part := 1; part <= tt.part; part++ {
+				writeTestFile(t, filepath.Join(partDir(questDir, part), "input.txt"), fmt.Sprintf("existing input %d", part))
+			}
+			if tt.part < 3 {
+				next := tt.part + 1
+				keysEndpoint := fmt.Sprintf("%s/event/%s/quest/%d", apiBaseURL, tt.year, tt.quest)
+				inputsEndpoint := fmt.Sprintf("https://everybody.codes/assets/%s/%d/input/8.json", tt.year, tt.quest)
+				request.inputs.bodies[keysEndpoint] = jsonString(t, map[string]string{fmt.Sprintf("key%d", next): testKey})
+				request.inputs.bodies[inputsEndpoint] = jsonString(t, map[string]string{fmt.Sprint(next): testNotes[next-1].encoded})
+			}
+			var output bytes.Buffer
+			args := []string{"--year", tt.year, "--quest", fmt.Sprint(tt.quest), "--part", fmt.Sprint(tt.part), "1309"}
+			if err := executeSubmit(t.Context(), args, strings.NewReader(""), &output); err != nil {
+				t.Fatal(err)
+			}
+			if request.calls != 1 {
+				t.Fatalf("submission requests = %d, want 1", request.calls)
+			}
+			for part := 1; part <= 3; part++ {
+				dir := partDir(questDir, part)
+				path := filepath.Join(dir, "input.txt")
+				switch {
+				case part <= tt.part:
+					assertFile(t, path, fmt.Sprintf("existing input %d", part))
+				case part == tt.part+1:
+					assertFile(t, path, testNotes[part-1].plain)
+				default:
+					assertMissing(t, path)
+				}
+				assertMissing(t, filepath.Join(dir, "input"))
+				assertMissing(t, filepath.Join(dir, "input-encoded.txt"))
+			}
+			wantDownloads := 3
+			if tt.part == 3 {
+				wantDownloads = 0
+			}
+			if len(request.inputs.calls) != wantDownloads {
+				t.Fatalf("download requests = %v, want %d", request.inputs.calls, wantDownloads)
+			}
+		})
+	}
+}
+
+func TestSubmitReportsDownloadFailureAfterAcceptedAnswer(t *testing.T) {
+	request := setupSubmission(t, http.StatusOK, `{"correct":true}`)
+	request.inputs.statuses[inputsURL] = http.StatusServiceUnavailable
+	path := "2024/quest-01/part-01/input.txt"
+	writeTestFile(t, path, "existing input")
+	var output bytes.Buffer
+	err := executeSubmit(t.Context(), []string{"-y2024", "-q1", "-p1", "1309"}, strings.NewReader(""), &output)
+	if err == nil || !strings.Contains(err.Error(), "answer accepted, but downloading quest inputs failed") {
+		t.Fatalf("error = %v, want accepted-answer download error", err)
+	}
+	var status *httpStatusError
+	if !errors.As(err, &status) || status.statusCode != http.StatusServiceUnavailable {
+		t.Fatalf("error = %v, want underlying HTTP 503", err)
+	}
+	if request.calls != 1 || !strings.Contains(output.String(), "Congratulations!") {
+		t.Fatalf("submission requests = %d, output = %q", request.calls, output.String())
+	}
+	assertFile(t, path, "existing input")
+	assertMissing(t, "2024/quest-01/part-02/input.txt")
 }
 
 func TestSubmitRejectsRedirects(t *testing.T) {
