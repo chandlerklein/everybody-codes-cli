@@ -14,7 +14,7 @@ This installs `ec` into `GOBIN`, or `$(go env GOPATH)/bin` if `GOBIN` is unset (
 
 ## Set up your session
 
-Sign in to Everybody Codes, then use your browser's developer tools to copy the value of the `everybody-codes` cookie.
+Sign in to Everybody Codes, then copy your session cookie value from the profile settings page.
 
 Create `~/.config/everybody-codes/` and save the cookie value in a file named `session` inside it. Include only the raw value, without quotes or the `everybody-codes=` prefix. A trailing newline is fine. Restrict access to the file:
 
