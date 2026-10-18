@@ -11,14 +11,16 @@ import (
 	"path/filepath"
 	"slices"
 	"strings"
+	"sync"
 	"testing"
+	"time"
 )
 
 const (
 	testURL     = "https://everybody.codes/event/2024/quests/1"
-	userURL     = "https://api.everybody.codes/user/me"
+	userURL     = apiBaseURL + "/user/me"
 	inputsURL   = "https://everybody.codes/assets/2024/1/input/8.json"
-	keysURL     = "https://api.everybody.codes/event/2024/quest/1"
+	keysURL     = apiBaseURL + "/event/2024/quest/1"
 	testSession = "test-session-never-log-this"
 )
 
@@ -27,6 +29,7 @@ type roundTripFunc func(*http.Request) (*http.Response, error)
 func (f roundTripFunc) RoundTrip(r *http.Request) (*http.Response, error) { return f(r) }
 
 type testAPI struct {
+	mu       sync.Mutex
 	bodies   map[string]string
 	statuses map[string]int
 	calls    []string
@@ -61,7 +64,9 @@ func setup(t *testing.T) *testAPI {
 			t.Error("request did not include the expected session cookie")
 		}
 		endpoint := r.URL.String()
+		api.mu.Lock()
 		api.calls = append(api.calls, endpoint)
+		api.mu.Unlock()
 		body, ok := api.bodies[endpoint]
 		if !ok {
 			return nil, fmt.Errorf("unexpected request to %s", endpoint)
@@ -133,6 +138,8 @@ func TestInitQuest(t *testing.T) {
 		assertFile(t, filepath.Join(dir, "input.txt"), testNotes[part-1].plain)
 	}
 	wantCalls := []string{userURL, inputsURL, keysURL}
+	slices.Sort(api.calls)
+	slices.Sort(wantCalls)
 	if !slices.Equal(api.calls, wantCalls) {
 		t.Errorf("requests = %v, want %v", api.calls, wantCalls)
 	}
@@ -148,6 +155,90 @@ func TestInitQuest(t *testing.T) {
 	}
 	if len(api.calls) != 3 {
 		t.Error("complete quest made additional HTTP requests")
+	}
+}
+
+func TestInitQuestFetchesKeysAlongsideSeedAndInputs(t *testing.T) {
+	setup(t)
+	transport := http.DefaultClient.Transport
+	inputsStarted := make(chan struct{})
+	keysStarted := make(chan struct{})
+	http.DefaultClient.Transport = roundTripFunc(func(r *http.Request) (*http.Response, error) {
+		var peerStarted <-chan struct{}
+		switch r.URL.String() {
+		case userURL:
+			peerStarted = keysStarted
+		case inputsURL:
+			close(inputsStarted)
+			peerStarted = keysStarted
+		case keysURL:
+			close(keysStarted)
+			peerStarted = inputsStarted
+		default:
+			return transport.RoundTrip(r)
+		}
+		// The seed waits for keys to start; keys and inputs wait for each other.
+		select {
+		case <-peerStarted:
+			return transport.RoundTrip(r)
+		case <-r.Context().Done():
+			return nil, r.Context().Err()
+		}
+	})
+	ctx, cancel := context.WithTimeout(t.Context(), 5*time.Second)
+	defer cancel()
+	if err := run(ctx, []string{testURL}, io.Discard); err != nil {
+		t.Fatal(err)
+	}
+	for part := 1; part <= 3; part++ {
+		assertFile(t, fmt.Sprintf("2024/quest-01/part-%02d/input/input.txt", part), testNotes[part-1].plain)
+	}
+}
+
+func TestInitQuestCancelsKeysOnFailure(t *testing.T) {
+	for _, tt := range []struct {
+		name, endpoint, want string
+	}{
+		{"seed", userURL, "get user seed"},
+		{"inputs", inputsURL, "get encoded notes"},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			api := setup(t)
+			api.statuses[tt.endpoint] = http.StatusNotFound
+			transport := http.DefaultClient.Transport
+			keysStarted := make(chan struct{})
+			keysCanceled := make(chan struct{})
+			http.DefaultClient.Transport = roundTripFunc(func(r *http.Request) (*http.Response, error) {
+				switch r.URL.String() {
+				case keysURL:
+					close(keysStarted)
+					<-r.Context().Done()
+					close(keysCanceled)
+					return nil, r.Context().Err()
+				case tt.endpoint:
+					select {
+					case <-keysStarted:
+					case <-r.Context().Done():
+						return nil, r.Context().Err()
+					}
+				}
+				return transport.RoundTrip(r)
+			})
+			ctx, cancel := context.WithTimeout(t.Context(), 5*time.Second)
+			defer cancel()
+			err := run(ctx, []string{testURL}, io.Discard)
+			if err == nil || !strings.Contains(err.Error(), tt.want) || !strings.Contains(err.Error(), "HTTP 404") {
+				t.Fatalf("error = %v, want %s HTTP 404", err, tt.want)
+			}
+			if ctx.Err() != nil {
+				t.Fatal("pending key request was not canceled before the test timeout")
+			}
+			select {
+			case <-keysCanceled:
+			default:
+				t.Fatal("returned before the pending key request was canceled")
+			}
+		})
 	}
 }
 
@@ -179,7 +270,7 @@ func TestInitQuestUnlocksPartsOnRerun(t *testing.T) {
 func TestInitQuestTwoDigitNumber(t *testing.T) {
 	api := setup(t)
 	inputEndpoint := "https://everybody.codes/assets/2024/12/input/8.json"
-	keyEndpoint := "https://api.everybody.codes/event/2024/quest/12"
+	keyEndpoint := apiBaseURL + "/event/2024/quest/12"
 	api.bodies[inputEndpoint] = api.bodies[inputsURL]
 	api.bodies[keyEndpoint] = api.bodies[keysURL]
 	delete(api.bodies, inputsURL)
@@ -192,7 +283,10 @@ func TestInitQuestTwoDigitNumber(t *testing.T) {
 		assertFile(t, filepath.Join(dir, "input-encoded.txt"), testNotes[part-1].encoded)
 		assertFile(t, filepath.Join(dir, "input.txt"), testNotes[part-1].plain)
 	}
-	if !slices.Equal(api.calls, []string{userURL, inputEndpoint, keyEndpoint}) {
+	wantCalls := []string{userURL, inputEndpoint, keyEndpoint}
+	slices.Sort(api.calls)
+	slices.Sort(wantCalls)
+	if !slices.Equal(api.calls, wantCalls) {
 		t.Errorf("unexpected requests: %v", api.calls)
 	}
 }

@@ -16,6 +16,8 @@ import (
 	"time"
 )
 
+const apiBaseURL = "https://api.everybody.codes"
+
 var questPath = regexp.MustCompile(`^/event/([A-Za-z0-9][A-Za-z0-9_-]*)/quests/([0-9]+)/?$`)
 
 type quest struct {
@@ -91,10 +93,25 @@ func initQuest(ctx context.Context, q quest, baseDir string, output io.Writer) e
 	if err != nil {
 		return err
 	}
+	// Keys need no seed, so fetch them alongside the seed and encoded inputs.
+	ctx, cancel := context.WithCancel(ctx)
+	keysURL := fmt.Sprintf("%s/event/%s/quest/%d", apiBaseURL, q.event, q.number)
+	var keys map[string]json.RawMessage
+	var keysErr error
+	keysDone := make(chan struct{})
+	go func() {
+		defer close(keysDone)
+		keysErr = getJSON(ctx, keysURL, cookie, &keys)
+	}()
+	defer func() {
+		cancel()
+		<-keysDone
+	}()
+
 	var user struct {
 		Seed *int64 `json:"seed"`
 	}
-	if err := getJSON(ctx, "https://api.everybody.codes/user/me", cookie, &user); err != nil {
+	if err := getJSON(ctx, apiBaseURL+"/user/me", cookie, &user); err != nil {
 		return fmt.Errorf("get user seed: %w", err)
 	}
 	if user.Seed == nil || *user.Seed < 0 {
@@ -115,10 +132,9 @@ func initQuest(ctx context.Context, q quest, baseDir string, output io.Writer) e
 			return fmt.Errorf("write encoded notes for part %d: %w", part, err)
 		}
 	}
-	keysURL := fmt.Sprintf("https://api.everybody.codes/event/%s/quest/%d", q.event, q.number)
-	var keys map[string]json.RawMessage
-	if err := getJSON(ctx, keysURL, cookie, &keys); err != nil {
-		return fmt.Errorf("get quest keys: %w", err)
+	<-keysDone
+	if keysErr != nil {
+		return fmt.Errorf("get quest keys: %w", keysErr)
 	}
 	for _, part := range pending {
 		var key string
