@@ -33,8 +33,8 @@ func TestCommandHelp(t *testing.T) {
 		{[]string{"auth", "check", "--help"}, "ec auth check [flags]"},
 		{[]string{"status", "--help"}, "ec status [flags]"},
 		{[]string{"update", "--help"}, "ec update [flags]"},
-		{[]string{"submit", "--help"}, "ec submit --quest <quest> --part <part> [<ANSWER>]"},
-		{[]string{"help", "submit"}, "ec submit --quest <quest> --part <part> [<ANSWER>]"},
+		{[]string{"submit", "--help"}, "ec submit [<ANSWER>]"},
+		{[]string{"help", "submit"}, "ec submit [<ANSWER>]"},
 		{[]string{"help", "auth", "check"}, "ec auth check [flags]"},
 	} {
 		t.Run(strings.Join(tt.args, " "), func(t *testing.T) {

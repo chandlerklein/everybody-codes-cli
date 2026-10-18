@@ -14,7 +14,7 @@ import (
 )
 
 // SubmitAnswer submits an answer and downloads newly unlocked inputs after success.
-func (c *Client) SubmitAnswer(ctx context.Context, q Quest, part int, answer string, output io.Writer) error {
+func (c *Client) SubmitAnswer(ctx context.Context, q Quest, part int, answer, baseDir string, output io.Writer) error {
 	cookie, err := session.Load()
 	if err != nil {
 		return err
@@ -56,7 +56,7 @@ func (c *Client) SubmitAnswer(ctx context.Context, q Quest, part int, answer str
 		}
 		return statusErr
 	}
-	if _, err := fmt.Fprintf(output, "HTTP %s\n", resp.Status); err != nil {
+	if _, err := fmt.Fprintf(output, "Year %s, quest %d, part %d\nHTTP %s\n", q.Year, q.Number, part, resp.Status); err != nil {
 		return err
 	}
 	if text != "" {
@@ -74,7 +74,7 @@ func (c *Client) SubmitAnswer(ctx context.Context, q Quest, part int, answer str
 		if _, err := fmt.Fprintf(output, "Congratulations! You solved part %d of quest %d (%s).\n", part, q.Number, q.Year); err != nil {
 			return err
 		}
-		if err := c.Download(ctx, q, ".", false, output); err != nil {
+		if err := c.Download(ctx, q, baseDir, false, output); err != nil {
 			return fmt.Errorf("answer accepted, but downloading quest inputs failed: %w", err)
 		}
 	}
