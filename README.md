@@ -109,7 +109,7 @@ ec status --dir ~/projects/everybody-codes
     part-03: locked
 ```
 
-Each local quest lists all three parts. A part is `ready` if `input/input.txt` is a regular file; otherwise it is `locked`, including missing part directories. Status uses local files only and does not track solved parts or remote availability. An empty directory reports `No local quests found.`; a missing base directory is an error.
+Each local quest lists all three parts. Status checks the same zero-padded directories as `get`: `part-01`, `part-02`, and `part-03`. Other spellings, such as `part-1` or `part-001`, are ignored. A part is `ready` if `input/input.txt` is a regular file; otherwise it is `locked`, including missing part directories. Status uses local files only and does not track solved parts or remote availability. An empty directory reports `No local quests found.`; a missing base directory is an error.
 
 ## Help and shell completion
 

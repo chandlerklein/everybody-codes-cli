@@ -141,14 +141,29 @@ func TestStatusReportsEachPartIndependently(t *testing.T) {
 			want:  "2024\n  quest-01\n    part-01: locked\n    part-02: ready\n    part-03: locked\n",
 		},
 		{
-			name: "nonpadded parts and extra parts",
+			name: "ignore noncanonical parts and extra parts",
 			files: []string{
 				"part-1/input/input.txt",
 				"part-2/input/input-encoded.txt",
 				"part-3/input/input.txt",
 				"part-04/input/input.txt",
+				"part-001/input/input.txt",
+				"part-002/input/input.txt",
+				"part-003/input/input.txt",
 			},
-			want: "2024\n  quest-01\n    part-01: ready\n    part-02: locked\n    part-03: ready\n",
+			want: "2024\n  quest-01\n    part-01: locked\n    part-02: locked\n    part-03: locked\n",
+		},
+		{
+			name: "canonical parts determine readiness alongside noncanonical parts",
+			files: []string{
+				"part-01/input/input-encoded.txt",
+				"part-02/input/input.txt",
+				"part-03/input/input-encoded.txt",
+				"part-1/input/input.txt",
+				"part-2/input/input-encoded.txt",
+				"part-003/input/input.txt",
+			},
+			want: "2024\n  quest-01\n    part-01: locked\n    part-02: ready\n    part-03: locked\n",
 		},
 	} {
 		t.Run(test.name, func(t *testing.T) {

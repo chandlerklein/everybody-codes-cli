@@ -15,7 +15,7 @@ import (
 var (
 	statusEventName = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9_-]*$`)
 	statusQuestName = regexp.MustCompile(`^quest-([0-9]+)$`)
-	statusPartName  = regexp.MustCompile(`^part-([0-9]+)$`)
+	statusPartName  = regexp.MustCompile(`^part-(0[1-3])$`)
 )
 
 type localQuestStatus struct {
@@ -125,7 +125,7 @@ func questPartReadiness(root *os.Root, path string) ([3]bool, error) {
 		if err != nil || number < 1 || number > len(ready) {
 			continue
 		}
-		inputPath := filepath.Join(path, part, "input", "input.txt")
+		inputPath := filepath.Join(partInputDir(path, number), "input.txt")
 		info, err := root.Stat(inputPath)
 		if errors.Is(err, os.ErrNotExist) {
 			continue
