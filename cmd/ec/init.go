@@ -56,22 +56,22 @@ func loadSession() (*http.Cookie, error) {
 	return cookie, nil
 }
 
-func initQuest(ctx context.Context, q quest, output io.Writer) error {
-	dir := filepath.Join(q.event, fmt.Sprintf("quest-%02d", q.number))
+func initQuest(ctx context.Context, q quest, baseDir string, output io.Writer) error {
+	dir := filepath.Join(baseDir, q.event, fmt.Sprintf("quest-%02d", q.number))
 	var pending []int
 	for part := 1; part <= 3; part++ {
 		inputDir := partInputDir(dir, part)
 		if err := os.MkdirAll(inputDir, 0o755); err != nil {
 			return fmt.Errorf("create input directory: %w", err)
 		}
-		info, err := os.Stat(filepath.Join(inputDir, "notes.txt"))
+		info, err := os.Stat(filepath.Join(inputDir, "input.txt"))
 		switch {
 		case errors.Is(err, os.ErrNotExist):
 			pending = append(pending, part)
 		case err != nil:
 			return fmt.Errorf("check part %d notes: %w", part, err)
 		case !info.Mode().IsRegular():
-			return fmt.Errorf("part %d notes.txt must be a regular file", part)
+			return fmt.Errorf("part %d input.txt must be a regular file", part)
 		}
 	}
 	if len(pending) == 0 {
@@ -101,7 +101,7 @@ func initQuest(ctx context.Context, q quest, output io.Writer) error {
 		if !ok || encoded == "" {
 			return fmt.Errorf("input response is missing encoded notes for part %d", part)
 		}
-		path := filepath.Join(partInputDir(dir, part), "notes-encoded.txt")
+		path := filepath.Join(partInputDir(dir, part), "input-encoded.txt")
 		if err := os.WriteFile(path, []byte(encoded), 0o644); err != nil {
 			return fmt.Errorf("write encoded notes for part %d: %w", part, err)
 		}
@@ -125,7 +125,7 @@ func initQuest(ctx context.Context, q quest, output io.Writer) error {
 			continue
 		}
 		inputDir := partInputDir(dir, part)
-		encoded, err := os.ReadFile(filepath.Join(inputDir, "notes-encoded.txt"))
+		encoded, err := os.ReadFile(filepath.Join(inputDir, "input-encoded.txt"))
 		if err != nil {
 			return fmt.Errorf("read encoded notes for part %d: %w", part, err)
 		}
@@ -133,7 +133,7 @@ func initQuest(ctx context.Context, q quest, output io.Writer) error {
 		if err != nil {
 			return fmt.Errorf("decode part %d notes: %w", part, err)
 		}
-		if err := writeNotes(filepath.Join(inputDir, "notes.txt"), notes); err != nil {
+		if err := writeNotes(filepath.Join(inputDir, "input.txt"), notes); err != nil {
 			return fmt.Errorf("write part %d notes: %w", part, err)
 		}
 		if _, err := fmt.Fprintf(output, "Part %d: decoded notes saved\n", part); err != nil {
@@ -182,7 +182,7 @@ func writeNotes(path string, notes []byte) error {
 	_, writeErr := f.Write(notes)
 	closeErr := f.Close()
 	if err := errors.Join(writeErr, closeErr); err != nil {
-		// Do not leave an incomplete notes.txt that a later run would skip.
+		// Do not leave an incomplete input.txt that a later run would skip.
 		_ = os.Remove(path)
 		return err
 	}

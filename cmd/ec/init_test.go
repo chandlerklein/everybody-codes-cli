@@ -128,8 +128,8 @@ func TestInitQuest(t *testing.T) {
 	}
 	for part := 1; part <= 3; part++ {
 		dir := fmt.Sprintf("2024/quest-01/part-%02d/input", part)
-		assertFile(t, filepath.Join(dir, "notes-encoded.txt"), testNotes[part-1].encoded)
-		assertFile(t, filepath.Join(dir, "notes.txt"), testNotes[part-1].plain)
+		assertFile(t, filepath.Join(dir, "input-encoded.txt"), testNotes[part-1].encoded)
+		assertFile(t, filepath.Join(dir, "input.txt"), testNotes[part-1].plain)
 	}
 	wantCalls := []string{userURL, inputsURL, keysURL}
 	if !slices.Equal(api.calls, wantCalls) {
@@ -158,20 +158,20 @@ func TestInitQuestUnlocksPartsOnRerun(t *testing.T) {
 	}
 	for part := 2; part <= 3; part++ {
 		dir := fmt.Sprintf("2024/quest-01/part-%02d/input", part)
-		assertFile(t, filepath.Join(dir, "notes-encoded.txt"), testNotes[part-1].encoded)
-		assertMissing(t, filepath.Join(dir, "notes.txt"))
+		assertFile(t, filepath.Join(dir, "input-encoded.txt"), testNotes[part-1].encoded)
+		assertMissing(t, filepath.Join(dir, "input.txt"))
 	}
-	writeTestFile(t, "2024/quest-01/part-01/input/notes.txt", "keep my existing notes")
+	writeTestFile(t, "2024/quest-01/part-01/input/input.txt", "keep my existing notes")
 	// Completed parts are skipped even if their remote input and key are unusable.
 	api.bodies[inputsURL] = jsonString(t, map[string]string{"2": testNotes[1].encoded, "3": testNotes[2].encoded})
 	api.bodies[keysURL] = jsonString(t, map[string]any{"key1": 42, "key2": testKey, "key3": testKey})
 	if err := run(context.Background(), []string{"init", testURL}, io.Discard); err != nil {
 		t.Fatal(err)
 	}
-	assertFile(t, "2024/quest-01/part-01/input/notes.txt", "keep my existing notes")
-	assertFile(t, "2024/quest-01/part-01/input/notes-encoded.txt", testNotes[0].encoded)
+	assertFile(t, "2024/quest-01/part-01/input/input.txt", "keep my existing notes")
+	assertFile(t, "2024/quest-01/part-01/input/input-encoded.txt", testNotes[0].encoded)
 	for part := 2; part <= 3; part++ {
-		assertFile(t, fmt.Sprintf("2024/quest-01/part-%02d/input/notes.txt", part), testNotes[part-1].plain)
+		assertFile(t, fmt.Sprintf("2024/quest-01/part-%02d/input/input.txt", part), testNotes[part-1].plain)
 	}
 }
 
@@ -188,11 +188,81 @@ func TestInitQuestTwoDigitNumber(t *testing.T) {
 	}
 	for part := 1; part <= 3; part++ {
 		dir := fmt.Sprintf("2024/quest-12/part-%02d/input", part)
-		assertFile(t, filepath.Join(dir, "notes-encoded.txt"), testNotes[part-1].encoded)
-		assertFile(t, filepath.Join(dir, "notes.txt"), testNotes[part-1].plain)
+		assertFile(t, filepath.Join(dir, "input-encoded.txt"), testNotes[part-1].encoded)
+		assertFile(t, filepath.Join(dir, "input.txt"), testNotes[part-1].plain)
 	}
 	if !slices.Equal(api.calls, []string{userURL, inputEndpoint, keyEndpoint}) {
 		t.Errorf("unexpected requests: %v", api.calls)
+	}
+}
+
+func TestInitQuestDirectoryFlag(t *testing.T) {
+	absoluteDir := filepath.Join(t.TempDir(), "new destination")
+	for _, tt := range []struct {
+		name, dir string
+		args      []string
+	}{
+		{"before URL", "elsewhere", []string{"init", "--dir", "elsewhere", testURL}},
+		{"after URL", "elsewhere", []string{"init", testURL, "--dir", "elsewhere"}},
+		{"equals syntax", "nested/destination", []string{"init", "--dir=nested/destination", testURL}},
+		{"space in path", "my solutions", []string{"init", testURL, "--dir=my solutions"}},
+		{"absolute path", absoluteDir, []string{"init", "--dir", absoluteDir, testURL}},
+		{"end of options", "elsewhere", []string{"init", "--dir", "elsewhere", "--", testURL}},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			api := setup(t)
+			cwd, err := os.Getwd()
+			if err != nil {
+				t.Fatal(err)
+			}
+			if err := run(context.Background(), tt.args, io.Discard); err != nil {
+				t.Fatal(err)
+			}
+			for part := 1; part <= 3; part++ {
+				dir := filepath.Join(tt.dir, fmt.Sprintf("2024/quest-01/part-%02d/input", part))
+				assertFile(t, filepath.Join(dir, "input-encoded.txt"), testNotes[part-1].encoded)
+				assertFile(t, filepath.Join(dir, "input.txt"), testNotes[part-1].plain)
+			}
+			assertMissing(t, "2024")
+			if got, err := os.Getwd(); err != nil || got != cwd {
+				t.Fatalf("working directory changed: got %q (%v), want %q", got, err, cwd)
+			}
+			path := filepath.Join(tt.dir, "2024/quest-01/part-01/input/input.txt")
+			writeTestFile(t, path, "preserve these inputs")
+			api.calls = nil
+			if err := run(context.Background(), tt.args, io.Discard); err != nil {
+				t.Fatal(err)
+			}
+			assertFile(t, path, "preserve these inputs")
+			if len(api.calls) != 0 {
+				t.Error("complete quest in the selected directory made HTTP requests")
+			}
+		})
+	}
+}
+
+func TestRunInvalidDirectoryFlag(t *testing.T) {
+	for _, tt := range []struct {
+		name, want string
+		args       []string
+	}{
+		{"missing value", "requires a directory", []string{"init", testURL, "--dir"}},
+		{"empty value", "requires a nonempty directory", []string{"init", "--dir", "", testURL}},
+		{"empty equals value", "requires a nonempty directory", []string{"init", testURL, "--dir="}},
+		{"unknown option", "unknown option", []string{"init", "--directory", "elsewhere", testURL}},
+		{"missing URL", usage, []string{"init", "--dir", "elsewhere"}},
+		{"flag after end of options", usage, []string{"init", "--", testURL, "--dir", "elsewhere"}},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			api := setup(t)
+			err := run(context.Background(), tt.args, io.Discard)
+			if err == nil || !strings.Contains(err.Error(), tt.want) {
+				t.Fatalf("error = %v, want %q", err, tt.want)
+			}
+			if len(api.calls) != 0 {
+				t.Error("invalid arguments caused HTTP requests")
+			}
+		})
 	}
 }
 
@@ -202,8 +272,8 @@ func TestInitQuestFileConflicts(t *testing.T) {
 		directory        bool
 	}{
 		{"event is a file", "2024", "create input directory", false},
-		{"notes is a directory", "2024/quest-01/part-01/input/notes.txt", "must be a regular file", true},
-		{"encoded notes is a directory", "2024/quest-01/part-01/input/notes-encoded.txt", "write encoded notes", true},
+		{"notes is a directory", "2024/quest-01/part-01/input/input.txt", "must be a regular file", true},
+		{"encoded notes is a directory", "2024/quest-01/part-01/input/input-encoded.txt", "write encoded notes", true},
 	} {
 		t.Run(tt.name, func(t *testing.T) {
 			setup(t)
@@ -226,7 +296,7 @@ func TestInitQuestFileConflicts(t *testing.T) {
 }
 
 func TestWriteNotesPreservesExistingFile(t *testing.T) {
-	path := filepath.Join(t.TempDir(), "notes.txt")
+	path := filepath.Join(t.TempDir(), "input.txt")
 	writeTestFile(t, path, "existing notes")
 	if err := writeNotes(path, []byte("replacement notes")); err != nil {
 		t.Fatal(err)
@@ -264,7 +334,7 @@ func TestInitQuestFailures(t *testing.T) {
 			if strings.Contains(err.Error()+output.String(), testSession) {
 				t.Error("session cookie was exposed")
 			}
-			assertMissing(t, "2024/quest-01/part-01/input/notes.txt")
+			assertMissing(t, "2024/quest-01/part-01/input/input.txt")
 		})
 	}
 }
@@ -341,8 +411,10 @@ func TestRunUsage(t *testing.T) {
 			t.Errorf("run(%v) error = %v, want usage", args, err)
 		}
 	}
-	var output bytes.Buffer
-	if err := run(context.Background(), []string{"--help"}, &output); err != nil || strings.TrimSpace(output.String()) != usage {
-		t.Errorf("help output = %q, error = %v", output.String(), err)
+	for _, args := range [][]string{{"--help"}, {"-h"}, {"init", "--help"}, {"init", "-h"}} {
+		var output bytes.Buffer
+		if err := run(context.Background(), args, &output); err != nil || strings.TrimSpace(output.String()) != usage {
+			t.Errorf("help output = %q, error = %v", output.String(), err)
+		}
 	}
 }

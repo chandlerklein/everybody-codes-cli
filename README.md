@@ -43,9 +43,17 @@ This creates:
   part-03/input/
 ```
 
-Each part receives `notes-encoded.txt`. Parts with available AES keys also receive decoded `notes.txt`. Quest numbers have a minimum width of two digits, so quest 12 uses `quest-12`.
+Each part receives `input-encoded.txt`. Parts with available AES keys also receive decoded `input.txt`. Quest numbers have a minimum width of two digits, so quest 12 uses `quest-12`.
 
-Existing directories are reused. Parts that already have `notes.txt` are skipped, preserving their files. Run the command again after unlocking another part to decode its notes. Once all three parts have `notes.txt`, the command finishes without making HTTP requests.
+Existing directories are reused. Parts that already have `input.txt` are skipped, preserving their files. Run the command again after unlocking another part to decode its notes. Once all three parts have `input.txt`, the command finishes without making HTTP requests.
+
+To create the quest under a different directory, use `--dir`:
+
+```sh
+ec init https://everybody.codes/event/2024/quests/1 --dir ~/projects/everybody-codes
+```
+
+This creates `~/projects/everybody-codes/2024/quest-01/`. The flag accepts absolute or relative paths and can appear before or after the URL. Missing directories are created automatically. Without `--dir`, the current directory is used.
 
 ## Tests
 
