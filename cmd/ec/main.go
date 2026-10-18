@@ -34,10 +34,20 @@ func run(ctx context.Context, args []string, output io.Writer) error {
 func newRootCommand() *cobra.Command {
 	var downloadDir, statusDir, event, questNumber string
 	root := &cobra.Command{
-		Use:     "ec [<quest-url> | --event <event> --quest <quest>]",
+		Use:           "ec",
+		Short:         "Manage Everybody Codes quest inputs",
+		Args:          cobra.NoArgs,
+		SilenceErrors: true,
+		SilenceUsage:  true,
+		RunE: func(cmd *cobra.Command, _ []string) error {
+			return cmd.Help()
+		},
+	}
+	get := &cobra.Command{
+		Use:     "get [<quest-url> | --event <event> --quest <quest>]",
 		Short:   "Download and decrypt Everybody Codes quest inputs",
 		Long:    "Download and decrypt Everybody Codes quest inputs using a quest URL or both --event and --quest. Quest numbers may have leading zeros.",
-		Example: "  ec https://everybody.codes/event/2024/quests/1\n  ec -e 2024 -q 01\n  ec --event 2024 --quest 1 --dir solutions",
+		Example: "  ec get https://everybody.codes/event/2024/quests/1\n  ec get -e 2024 -q 01\n  ec get --event 2024 --quest 1 --dir solutions",
 		Args: func(cmd *cobra.Command, args []string) error {
 			eventSet, questSet := cmd.Flags().Changed("event"), cmd.Flags().Changed("quest")
 			if eventSet != questSet {
@@ -51,8 +61,6 @@ func newRootCommand() *cobra.Command {
 			}
 			return cobra.ExactArgs(1)(cmd, args)
 		},
-		SilenceErrors: true,
-		SilenceUsage:  true,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			if downloadDir == "" {
 				return fmt.Errorf("--dir requires a nonempty directory")
@@ -70,9 +78,9 @@ func newRootCommand() *cobra.Command {
 			return initQuest(cmd.Context(), q, downloadDir, cmd.OutOrStdout())
 		},
 	}
-	root.Flags().StringVar(&downloadDir, "dir", ".", "Directory for quest inputs")
-	root.Flags().StringVarP(&event, "event", "e", "", "Event identifier (for example, 2024; requires --quest)")
-	root.Flags().StringVarP(&questNumber, "quest", "q", "", "Quest number in decimal (for example, 1 or 01; requires --event)")
+	get.Flags().StringVar(&downloadDir, "dir", ".", "Directory for quest inputs")
+	get.Flags().StringVarP(&event, "event", "e", "", "Event identifier (for example, 2024; requires --quest)")
+	get.Flags().StringVarP(&questNumber, "quest", "q", "", "Quest number in decimal (for example, 1 or 01; requires --event)")
 	auth := &cobra.Command{
 		Use:   "auth",
 		Short: "Save a session cookie interactively",
@@ -105,6 +113,6 @@ func newRootCommand() *cobra.Command {
 		},
 	}
 	status.Flags().StringVar(&statusDir, "dir", ".", "Directory containing local quest inputs")
-	root.AddCommand(auth, status)
+	root.AddCommand(auth, get, status)
 	return root
 }

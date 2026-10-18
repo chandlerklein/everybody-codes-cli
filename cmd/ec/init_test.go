@@ -130,7 +130,7 @@ func TestInitQuest(t *testing.T) {
 		t.Fatal(err)
 	}
 	var output bytes.Buffer
-	if err := run(context.Background(), []string{testURL}, &output); err != nil {
+	if err := run(context.Background(), []string{"get", testURL}, &output); err != nil {
 		t.Fatal(err)
 	}
 	for part := 1; part <= 3; part++ {
@@ -151,7 +151,7 @@ func TestInitQuest(t *testing.T) {
 	if err := os.Remove(filepath.Join(os.Getenv("HOME"), ".config", "everybody-codes", "session")); err != nil {
 		t.Fatal(err)
 	}
-	if err := run(context.Background(), []string{testURL}, &output); err != nil {
+	if err := run(context.Background(), []string{"get", testURL}, &output); err != nil {
 		t.Fatal(err)
 	}
 	if len(api.calls) != 3 {
@@ -188,7 +188,7 @@ func TestInitQuestFetchesKeysAlongsideSeedAndInputs(t *testing.T) {
 	})
 	ctx, cancel := context.WithTimeout(t.Context(), 5*time.Second)
 	defer cancel()
-	if err := run(ctx, []string{testURL}, io.Discard); err != nil {
+	if err := run(ctx, []string{"get", testURL}, io.Discard); err != nil {
 		t.Fatal(err)
 	}
 	for part := 1; part <= 3; part++ {
@@ -227,7 +227,7 @@ func TestInitQuestCancelsKeysOnFailure(t *testing.T) {
 			})
 			ctx, cancel := context.WithTimeout(t.Context(), 5*time.Second)
 			defer cancel()
-			err := run(ctx, []string{testURL}, io.Discard)
+			err := run(ctx, []string{"get", testURL}, io.Discard)
 			if err == nil || !strings.Contains(err.Error(), tt.want) || !strings.Contains(err.Error(), "HTTP 404") {
 				t.Fatalf("error = %v, want %s HTTP 404", err, tt.want)
 			}
@@ -246,7 +246,7 @@ func TestInitQuestCancelsKeysOnFailure(t *testing.T) {
 func TestInitQuestUnlocksPartsOnRerun(t *testing.T) {
 	api := setup(t)
 	api.bodies[keysURL] = jsonString(t, map[string]any{"key1": testKey, "key2": nil})
-	if err := run(context.Background(), []string{testURL}, io.Discard); err != nil {
+	if err := run(context.Background(), []string{"get", testURL}, io.Discard); err != nil {
 		t.Fatal(err)
 	}
 	for part := 2; part <= 3; part++ {
@@ -261,7 +261,7 @@ func TestInitQuestUnlocksPartsOnRerun(t *testing.T) {
 	api.calls = nil
 	delete(api.bodies, userURL)
 	delete(api.bodies, inputsURL)
-	if err := run(context.Background(), []string{testURL}, io.Discard); err != nil {
+	if err := run(context.Background(), []string{"get", testURL}, io.Discard); err != nil {
 		t.Fatal(err)
 	}
 	if !slices.Equal(api.calls, []string{keysURL}) {
@@ -282,7 +282,7 @@ func TestInitQuestFetchesOnlyMissingEncodedNotes(t *testing.T) {
 	writeTestFile(t, cachePath, testNotes[0].encoded+"\n")
 	writeTestFile(t, "2024/quest-01/part-03/input/input.txt", "existing notes")
 	api.bodies[inputsURL] = jsonString(t, map[string]string{"2": testNotes[1].encoded})
-	if err := run(context.Background(), []string{testURL}, io.Discard); err != nil {
+	if err := run(context.Background(), []string{"get", testURL}, io.Discard); err != nil {
 		t.Fatal(err)
 	}
 	assertFile(t, cachePath, testNotes[0].encoded+"\n")
@@ -318,7 +318,7 @@ func TestInitQuestRefreshesMalformedCache(t *testing.T) {
 				writeTestFile(t, fmt.Sprintf("2024/quest-01/part-%02d/input/input-encoded.txt", part), encoded)
 			}
 			api.bodies[inputsURL] = jsonString(t, map[string]string{"1": testNotes[0].encoded})
-			if err := run(context.Background(), []string{testURL}, io.Discard); err != nil {
+			if err := run(context.Background(), []string{"get", testURL}, io.Discard); err != nil {
 				t.Fatal(err)
 			}
 			assertFile(t, "2024/quest-01/part-01/input/input-encoded.txt", testNotes[0].encoded)
@@ -337,7 +337,7 @@ func TestInitQuestReportsUnreadableCache(t *testing.T) {
 	if err := os.MkdirAll(path, 0o755); err != nil {
 		t.Fatal(err)
 	}
-	err := run(context.Background(), []string{testURL}, io.Discard)
+	err := run(context.Background(), []string{"get", testURL}, io.Discard)
 	if err == nil || !strings.Contains(err.Error(), "read encoded notes for part 1") {
 		t.Fatalf("error = %v, want cache read failure", err)
 	}
@@ -352,7 +352,7 @@ func TestInitQuestCachedInputsStillRequireKeys(t *testing.T) {
 		writeTestFile(t, fmt.Sprintf("2024/quest-01/part-%02d/input/input-encoded.txt", part), testNotes[part-1].encoded)
 	}
 	api.statuses[keysURL] = http.StatusUnauthorized
-	err := run(context.Background(), []string{testURL}, io.Discard)
+	err := run(context.Background(), []string{"get", testURL}, io.Discard)
 	if err == nil || !strings.Contains(err.Error(), "get quest keys") || !strings.Contains(err.Error(), "HTTP 401") {
 		t.Fatalf("error = %v, want quest keys HTTP 401", err)
 	}
@@ -370,7 +370,7 @@ func TestInitQuestTwoDigitNumber(t *testing.T) {
 	api.bodies[keyEndpoint] = api.bodies[keysURL]
 	delete(api.bodies, inputsURL)
 	delete(api.bodies, keysURL)
-	if err := run(context.Background(), []string{"https://everybody.codes/event/2024/quests/12"}, io.Discard); err != nil {
+	if err := run(context.Background(), []string{"get", "https://everybody.codes/event/2024/quests/12"}, io.Discard); err != nil {
 		t.Fatal(err)
 	}
 	for part := 1; part <= 3; part++ {
@@ -405,7 +405,7 @@ func TestInitQuestDirectoryFlag(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			if err := run(context.Background(), tt.args, io.Discard); err != nil {
+			if err := run(context.Background(), append([]string{"get"}, tt.args...), io.Discard); err != nil {
 				t.Fatal(err)
 			}
 			for part := 1; part <= 3; part++ {
@@ -420,7 +420,7 @@ func TestInitQuestDirectoryFlag(t *testing.T) {
 			path := filepath.Join(tt.dir, "2024/quest-01/part-01/input/input.txt")
 			writeTestFile(t, path, "preserve these inputs")
 			api.calls = nil
-			if err := run(context.Background(), tt.args, io.Discard); err != nil {
+			if err := run(context.Background(), append([]string{"get"}, tt.args...), io.Discard); err != nil {
 				t.Fatal(err)
 			}
 			assertFile(t, path, "preserve these inputs")
@@ -445,7 +445,7 @@ func TestRunInvalidDirectoryFlag(t *testing.T) {
 	} {
 		t.Run(tt.name, func(t *testing.T) {
 			api := setup(t)
-			err := run(context.Background(), tt.args, io.Discard)
+			err := run(context.Background(), append([]string{"get"}, tt.args...), io.Discard)
 			if err == nil || !strings.Contains(err.Error(), tt.want) {
 				t.Fatalf("error = %v, want %q", err, tt.want)
 			}
@@ -474,7 +474,7 @@ func TestInitQuestFileConflicts(t *testing.T) {
 			} else {
 				writeTestFile(t, tt.path, "existing file")
 			}
-			err := run(context.Background(), []string{testURL}, io.Discard)
+			err := run(context.Background(), []string{"get", testURL}, io.Discard)
 			if err == nil || !strings.Contains(err.Error(), tt.want) {
 				t.Fatalf("error = %v, want %q", err, tt.want)
 			}
@@ -523,7 +523,7 @@ func TestInitQuestFailures(t *testing.T) {
 			api.bodies[tt.endpoint] = tt.body
 			api.statuses[tt.endpoint] = tt.status
 			var output bytes.Buffer
-			err := run(context.Background(), []string{testURL}, &output)
+			err := run(context.Background(), []string{"get", testURL}, &output)
 			if err == nil || !strings.Contains(err.Error(), tt.want) {
 				t.Fatalf("error = %v, want %q", err, tt.want)
 			}
@@ -561,9 +561,9 @@ func TestInitQuestMissingEventOrQuest(t *testing.T) {
 								writeTestFile(t, path, testNotes[part-1].encoded)
 							}
 						}
-						args := []string{"-e", q.event, "-q", fmt.Sprint(q.number)}
+						args := []string{"get", "-e", q.event, "-q", fmt.Sprint(q.number)}
 						if useURL {
-							args = []string{fmt.Sprintf("https://everybody.codes/event/%s/quests/%d", q.event, q.number)}
+							args = []string{"get", fmt.Sprintf("https://everybody.codes/event/%s/quests/%d", q.event, q.number)}
 						}
 						err := run(t.Context(), args, io.Discard)
 						want := fmt.Sprintf("event %s or quest %d does not exist or is not available yet", q.event, q.number)
@@ -589,7 +589,7 @@ func TestInitQuestDoesNotReportOtherFailuresAsMissing(t *testing.T) {
 		t.Run(fmt.Sprint(status), func(t *testing.T) {
 			api := setup(t)
 			api.statuses[keysURL] = status
-			err := run(t.Context(), []string{"-e", "2024", "-q", "1"}, io.Discard)
+			err := run(t.Context(), []string{"get", "-e", "2024", "-q", "1"}, io.Discard)
 			if err == nil || !strings.Contains(err.Error(), fmt.Sprintf("HTTP %d", status)) {
 				t.Fatalf("error = %v, want HTTP %d", err, status)
 			}
@@ -619,7 +619,7 @@ func TestSessionFile(t *testing.T) {
 			} else {
 				writeTestFile(t, path, tt.value)
 			}
-			err := run(context.Background(), []string{testURL}, io.Discard)
+			err := run(context.Background(), []string{"get", testURL}, io.Discard)
 			if err == nil || !strings.Contains(err.Error(), "session file") {
 				t.Fatalf("error = %v, want session file error", err)
 			}
@@ -660,7 +660,7 @@ func TestSessionCookieFallback(t *testing.T) {
 				writeTestFile(t, path, tt.file)
 			}
 			var output bytes.Buffer
-			err := run(context.Background(), []string{testURL}, &output)
+			err := run(context.Background(), []string{"get", testURL}, &output)
 			if tt.wantErr == "" {
 				if err != nil {
 					t.Fatal(err)

@@ -64,17 +64,17 @@ The session file takes precedence. If it is missing, empty, or contains only whi
 Run from the directory where you keep your quest solutions:
 
 ```sh
-ec https://everybody.codes/event/2024/quests/1
+ec get https://everybody.codes/event/2024/quests/1
 ```
 
 Or specify the event and quest directly:
 
 ```sh
-ec -e 2024 -q 1
-ec --event 2024 --quest 01
+ec get -e 2024 -q 1
+ec get --event 2024 --quest 01
 ```
 
-Both forms download the same inputs as the URL above. `-e` is short for `--event`, and `-q` is short for `--quest`. Supply both flags together, without a quest URL. Quest numbers are decimal and may have leading zeros, so `01` means quest 1 and `08` means quest 8. Both forms also support `--dir`.
+Both forms download the same inputs as the URL above. Quest downloads require the `get` subcommand; `ec <URL>` and `ec -e 2024 -q 1` are no longer supported. `-e` is short for `--event`, and `-q` is short for `--quest`. Supply both flags together, without a quest URL. Quest numbers are decimal and may have leading zeros, so `01` means quest 1 and `08` means quest 8. Both forms also support `--dir`.
 
 If the server reports a missing event or quest, `ec` exits with an error identifying the requested event and quest. The server does not distinguish missing events from missing quests; inputs that are not available yet can produce the same response.
 
@@ -108,12 +108,12 @@ Inputs are specific to your account. Use separate output directories for differe
 To create the quest under a different directory, use `--dir`:
 
 ```sh
-ec https://everybody.codes/event/2024/quests/1 --dir ~/projects/everybody-codes
+ec get https://everybody.codes/event/2024/quests/1 --dir ~/projects/everybody-codes
 ```
 
 This creates `~/projects/everybody-codes/2024/quest-01/`. The flag accepts absolute or relative paths and can appear before or after the URL. Missing directories are created automatically. Without `--dir`, the current directory is used.
 
-Run `ec` by itself or use `ec --help` to see the available commands and download syntax. Each command also has its own help, such as `ec auth --help`, `ec auth check --help`, and `ec status --help`.
+Run `ec` by itself or use `ec --help` to see the available commands. Use `ec get --help` for download syntax. Each command also has its own help, such as `ec auth --help`, `ec auth check --help`, and `ec status --help`.
 
 ## Show local quest status
 
