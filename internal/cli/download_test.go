@@ -13,6 +13,8 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/chandlerklein/everybody-codes-cli/internal/everybodycodes"
 )
 
 func TestInitQuest(t *testing.T) {
@@ -520,20 +522,6 @@ func TestInitQuestFileConflicts(t *testing.T) {
 	}
 }
 
-func TestWriteNotesPreservesExistingFile(t *testing.T) {
-	dir := t.TempDir()
-	root, err := os.OpenRoot(dir)
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer root.Close()
-	writeTestFile(t, filepath.Join(dir, "input.txt"), "existing notes")
-	if err := writeNotes(root, "input.txt", []byte("replacement notes")); err != nil {
-		t.Fatal(err)
-	}
-	assertFile(t, filepath.Join(dir, "input.txt"), "existing notes")
-}
-
 func TestInitQuestFailures(t *testing.T) {
 	for _, tt := range []struct {
 		name, endpoint, body, want string
@@ -571,15 +559,15 @@ func TestInitQuestFailures(t *testing.T) {
 }
 
 func TestInitQuestMissingYearOrQuest(t *testing.T) {
-	for _, q := range []quest{{year: "2099", number: 1}, {year: "2024", number: 999}} {
+	for _, q := range []everybodycodes.Quest{{Year: "2099", Number: 1}, {Year: "2024", Number: 999}} {
 		for _, statusCode := range []int{http.StatusNotFound, http.StatusUnprocessableEntity} {
 			for _, failure := range []string{"inputs", "keys", "HTML inputs"} {
 				for _, useURL := range []bool{false, true} {
-					name := fmt.Sprintf("%s/%d/%d/%s/url=%t", q.year, q.number, statusCode, failure, useURL)
+					name := fmt.Sprintf("%s/%d/%d/%s/url=%t", q.Year, q.Number, statusCode, failure, useURL)
 					t.Run(name, func(t *testing.T) {
 						api := setup(t)
-						keysEndpoint := fmt.Sprintf("%s/event/%s/quest/%d", apiBaseURL, q.year, q.number)
-						inputsEndpoint := fmt.Sprintf("https://everybody.codes/assets/%s/%d/input/8.json", q.year, q.number)
+						keysEndpoint := fmt.Sprintf("%s/event/%s/quest/%d", apiBaseURL, q.Year, q.Number)
+						inputsEndpoint := fmt.Sprintf("https://everybody.codes/assets/%s/%d/input/8.json", q.Year, q.Number)
 						api.bodies[keysEndpoint] = api.bodies[keysURL]
 						api.bodies[inputsEndpoint] = api.bodies[inputsURL]
 						if failure == "inputs" {
@@ -590,21 +578,21 @@ func TestInitQuestMissingYearOrQuest(t *testing.T) {
 						if failure == "HTML inputs" {
 							api.bodies[inputsEndpoint] = "<!doctype html><html>Not found</html>"
 						}
-						args := []string{"get", "-y", q.year, "-q", fmt.Sprint(q.number)}
+						args := []string{"get", "-y", q.Year, "-q", fmt.Sprint(q.Number)}
 						if useURL {
-							args = []string{"get", fmt.Sprintf("https://everybody.codes/event/%s/quests/%d", q.year, q.number)}
+							args = []string{"get", fmt.Sprintf("https://everybody.codes/event/%s/quests/%d", q.Year, q.Number)}
 						}
 						err := run(t.Context(), args, io.Discard)
-						want := fmt.Sprintf("year %s or quest %d does not exist or is not available yet", q.year, q.number)
+						want := fmt.Sprintf("year %s or quest %d does not exist or is not available yet", q.Year, q.Number)
 						if err == nil || !strings.Contains(err.Error(), want) {
 							t.Fatalf("error = %v, want %q", err, want)
 						}
-						var status *httpStatusError
-						if !errors.As(err, &status) || status.statusCode != statusCode {
+						var status *everybodycodes.HTTPStatusError
+						if !errors.As(err, &status) || status.StatusCode != statusCode {
 							t.Fatalf("error did not preserve HTTP status %d: %v", statusCode, err)
 						}
 						for part := 1; part <= 3; part++ {
-							assertMissing(t, fmt.Sprintf("%s/quest-%02d/part-%02d/input.txt", q.year, q.number, part))
+							assertMissing(t, fmt.Sprintf("%s/quest-%02d/part-%02d/input.txt", q.Year, q.Number, part))
 						}
 					})
 				}

@@ -137,7 +137,15 @@ Your cookie is saved in `~/.config/everybody-codes/session`. For scripts, you ca
 
 ## Development
 
-`cmd/ec` contains the entry point. `internal/cli` contains the commands, supporting code, and their tests.
+The code is organized by responsibility:
+
+- `cmd/ec`: entry point and build version.
+- `internal/cli`: command setup, argument validation, and terminal input.
+- `internal/everybodycodes`: API requests, quests, answer submission, and local inputs.
+- `internal/session`: credential storage and environment fallback.
+- `internal/update`: release downloads, checksum verification, and executable replacement.
+
+Unit tests live with their packages; command integration tests live in `internal/cli`.
 
 Build and test from a checkout:
 

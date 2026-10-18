@@ -12,6 +12,8 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/chandlerklein/everybody-codes-cli/internal/everybodycodes"
 )
 
 func TestCommandHelp(t *testing.T) {
@@ -294,7 +296,7 @@ func TestCommandRejectsInvalidArgumentsWithoutSideEffects(t *testing.T) {
 
 func TestAuthCommandUsesInjectedInput(t *testing.T) {
 	setup(t)
-	cmd := newRootCommand("dev")
+	cmd := newRootCommand("dev", everybodycodes.NewClient(apiClient))
 	cmd.SetArgs([]string{"auth"})
 	cmd.SetIn(strings.NewReader("replacement-cookie\n"))
 	var output bytes.Buffer
@@ -312,7 +314,7 @@ func TestAuthCommandCancellation(t *testing.T) {
 	setup(t)
 	ctx, cancel := context.WithCancel(t.Context())
 	cancel()
-	cmd := newRootCommand("dev")
+	cmd := newRootCommand("dev", everybodycodes.NewClient(apiClient))
 	cmd.SetArgs([]string{"auth"})
 	cmd.SetIn(strings.NewReader("replacement-cookie\n"))
 	var output bytes.Buffer

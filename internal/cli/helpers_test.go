@@ -11,14 +11,34 @@ import (
 	"strings"
 	"sync"
 	"testing"
+
+	"github.com/chandlerklein/everybody-codes-cli/internal/everybodycodes"
 )
 
+var apiClient = &http.Client{}
+
+const testKey = "0123456789abcdef0123456789abcdef"
+
+// Fixed fixtures generated independently with OpenSSL AES-256-CBC.
+var testNotes = []struct {
+	plain   string
+	encoded string
+}{
+	{"First line\nSecond line: café\n", "9440069a68fcff18927655d301c4d8cb223bc0327075d19dd1b6f157c25aad17"},
+	{"Part two without trailing newline", "a2d11f4488dfc2027d15b27621673550475ebb72f3cf5c6c1f761aca42468c8d4c3f081921abf7418cfc0da5735b4200"},
+	{"Third part\n", "ac9927e485737228053c2717390b9d44"},
+	{"", "38ae83a3edd22a71ecf296539ddf7320"},
+	{"0123456789abcdef", "7dbd88272fb25937692a3b81004741755cc246053c1506c574adf2c40f5cde7e"},
+}
+
 const (
-	testURL     = "https://everybody.codes/event/2024/quests/1"
-	userURL     = apiBaseURL + "/user/me"
-	inputsURL   = "https://everybody.codes/assets/2024/1/input/8.json"
-	keysURL     = apiBaseURL + "/event/2024/quest/1"
-	testSession = "test-session-never-log-this"
+	apiBaseURL           = "https://api.everybody.codes"
+	maxJSONResponseBytes = 16 << 20
+	testURL              = "https://everybody.codes/event/2024/quests/1"
+	userURL              = apiBaseURL + "/user/me"
+	inputsURL            = "https://everybody.codes/assets/2024/1/input/8.json"
+	keysURL              = apiBaseURL + "/event/2024/quest/1"
+	testSession          = "test-session-never-log-this"
 )
 
 type roundTripFunc func(*http.Request) (*http.Response, error)
@@ -121,5 +141,5 @@ func assertMissing(t *testing.T, path string) {
 
 // run uses a development version for command tests.
 func run(ctx context.Context, args []string, output io.Writer) error {
-	return Run(ctx, args, output, "dev")
+	return execute(ctx, args, os.Stdin, output, "dev", everybodycodes.NewClient(apiClient))
 }

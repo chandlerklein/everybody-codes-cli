@@ -13,6 +13,8 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/chandlerklein/everybody-codes-cli/internal/everybodycodes"
 )
 
 type submissionRequest struct {
@@ -71,12 +73,7 @@ func setupSubmission(t *testing.T, status int, body string) *submissionRequest {
 }
 
 func executeSubmit(ctx context.Context, args []string, input io.Reader, output io.Writer) error {
-	cmd := newRootCommand("dev")
-	cmd.SetArgs(append([]string{"submit"}, args...))
-	cmd.SetIn(input)
-	cmd.SetOut(output)
-	cmd.SetErr(output)
-	return cmd.ExecuteContext(ctx)
+	return execute(ctx, append([]string{"submit"}, args...), input, output, "dev", everybodycodes.NewClient(apiClient))
 }
 
 func TestSubmitArgumentsAndInput(t *testing.T) {
@@ -215,8 +212,8 @@ func TestSubmitHTTPResponses(t *testing.T) {
 				}
 				return
 			}
-			var status *httpStatusError
-			if !errors.As(err, &status) || status.statusCode != tt.status || status.method != "POST" {
+			var status *everybodycodes.HTTPStatusError
+			if !errors.As(err, &status) || status.StatusCode != tt.status || status.Method != "POST" {
 				t.Fatalf("error = %v, want POST HTTP %d", err, tt.status)
 			}
 			if !strings.Contains(err.Error(), tt.body) || output.Len() != 0 {
@@ -282,7 +279,7 @@ func TestSubmitDownloadsNewlyUnlockedInputs(t *testing.T) {
 			request := setupSubmission(t, http.StatusOK, `{"correct":true}`)
 			questDir := fmt.Sprintf("%s/quest-%02d", tt.year, tt.quest)
 			for part := 1; part <= tt.part; part++ {
-				writeTestFile(t, filepath.Join(partDir(questDir, part), "input.txt"), fmt.Sprintf("existing input %d", part))
+				writeTestFile(t, filepath.Join(filepath.Join(questDir, fmt.Sprintf("part-%02d", part)), "input.txt"), fmt.Sprintf("existing input %d", part))
 			}
 			if tt.part < 3 {
 				next := tt.part + 1
@@ -300,7 +297,7 @@ func TestSubmitDownloadsNewlyUnlockedInputs(t *testing.T) {
 				t.Fatalf("submission requests = %d, want 1", request.calls)
 			}
 			for part := 1; part <= 3; part++ {
-				dir := partDir(questDir, part)
+				dir := filepath.Join(questDir, fmt.Sprintf("part-%02d", part))
 				path := filepath.Join(dir, "input.txt")
 				switch {
 				case part <= tt.part:
@@ -334,8 +331,8 @@ func TestSubmitReportsDownloadFailureAfterAcceptedAnswer(t *testing.T) {
 	if err == nil || !strings.Contains(err.Error(), "answer accepted, but downloading quest inputs failed") {
 		t.Fatalf("error = %v, want accepted-answer download error", err)
 	}
-	var status *httpStatusError
-	if !errors.As(err, &status) || status.statusCode != http.StatusServiceUnavailable {
+	var status *everybodycodes.HTTPStatusError
+	if !errors.As(err, &status) || status.StatusCode != http.StatusServiceUnavailable {
 		t.Fatalf("error = %v, want underlying HTTP 503", err)
 	}
 	if request.calls != 1 || !strings.Contains(output.String(), "Congratulations!") {
@@ -361,8 +358,8 @@ func TestSubmitRejectsRedirects(t *testing.T) {
 					}, nil
 				})
 				err := executeSubmit(t.Context(), []string{"-q1", "-p1", "1309"}, strings.NewReader(""), io.Discard)
-				var statusErr *httpStatusError
-				if !errors.As(err, &statusErr) || statusErr.statusCode != status || calls != 1 {
+				var statusErr *everybodycodes.HTTPStatusError
+				if !errors.As(err, &statusErr) || statusErr.StatusCode != status || calls != 1 {
 					t.Fatalf("error = %v, calls = %d; want redirect rejected", err, calls)
 				}
 			})

@@ -10,6 +10,8 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/chandlerklein/everybody-codes-cli/internal/everybodycodes"
 )
 
 func TestAuthSavesSession(t *testing.T) {
@@ -58,45 +60,6 @@ func TestAuthCreatesSessionDirectory(t *testing.T) {
 	}
 }
 
-func TestAuthReplacesSessionLinksWithoutChangingTarget(t *testing.T) {
-	for _, kind := range []string{"external symlink", "internal symlink", "hard link"} {
-		t.Run(kind, func(t *testing.T) {
-			home := t.TempDir()
-			t.Setenv("HOME", home)
-			dir := filepath.Join(home, ".config", "everybody-codes")
-			if err := os.MkdirAll(dir, 0o700); err != nil {
-				t.Fatal(err)
-			}
-			target := filepath.Join(t.TempDir(), "original")
-			if kind == "internal symlink" {
-				target = filepath.Join(dir, "original")
-			}
-			writeTestFile(t, target, "preserve original")
-			path := filepath.Join(dir, "session")
-			var err error
-			if kind == "hard link" {
-				err = os.Link(target, path)
-			} else if kind == "internal symlink" {
-				err = os.Symlink("original", path)
-			} else {
-				err = os.Symlink(target, path)
-			}
-			if err != nil {
-				t.Fatal(err)
-			}
-			if err := saveSessionCookie("replacement-cookie"); err != nil {
-				t.Fatal(err)
-			}
-			assertFile(t, target, "preserve original")
-			assertFile(t, path, "replacement-cookie\n")
-			info, err := os.Lstat(path)
-			if err != nil || !info.Mode().IsRegular() || info.Mode().Perm() != 0o600 {
-				t.Fatalf("session is not a regular file with mode 0600: %v, %v", info, err)
-			}
-		})
-	}
-}
-
 func TestAuthRejectsInvalidInputWithoutReplacingSession(t *testing.T) {
 	for _, value := range []string{"", "\n", "   \n", "cookie;other=value\n", "cookie\tvalue\n", strings.Repeat("x", (16<<10)+1)} {
 		t.Run(value[:min(len(value), 20)], func(t *testing.T) {
@@ -116,7 +79,7 @@ func TestAuthCheck(t *testing.T) {
 			api := setup(t)
 			api.bodies[userURL] = `{"seed":` + seed + `}`
 			var output bytes.Buffer
-			if err := runAuthCheck(t.Context(), &output); err != nil {
+			if err := runAuthCheck(t.Context(), everybodycodes.NewClient(apiClient), &output); err != nil {
 				t.Fatal(err)
 			}
 			if output.String() != "Session is valid.\n" {
@@ -165,7 +128,7 @@ func TestAuthCheckFailure(t *testing.T) {
 			api.statuses[userURL] = tt.status
 			api.bodies[userURL] = tt.body
 			var output bytes.Buffer
-			err := runAuthCheck(t.Context(), &output)
+			err := runAuthCheck(t.Context(), everybodycodes.NewClient(apiClient), &output)
 			if err == nil || !strings.Contains(err.Error(), tt.want) {
 				t.Fatalf("error = %v, want %s", err, tt.want)
 			}
@@ -187,7 +150,7 @@ func TestAuthCheckNetworkFailure(t *testing.T) {
 	apiClient.Transport = roundTripFunc(func(*http.Request) (*http.Response, error) {
 		return nil, errors.New("network unavailable")
 	})
-	err := runAuthCheck(t.Context(), io.Discard)
+	err := runAuthCheck(t.Context(), everybodycodes.NewClient(apiClient), io.Discard)
 	if err == nil || !strings.Contains(err.Error(), "could not verify session") || strings.Contains(err.Error(), "replace") {
 		t.Fatalf("error = %v", err)
 	}
@@ -199,11 +162,11 @@ func TestAuthCheckUsesSessionFallback(t *testing.T) {
 		t.Fatal(err)
 	}
 	t.Setenv("EVERYBODY_CODES_SESSION_COOKIE", testSession)
-	if err := runAuthCheck(t.Context(), io.Discard); err != nil {
+	if err := runAuthCheck(t.Context(), everybodycodes.NewClient(apiClient), io.Discard); err != nil {
 		t.Fatal(err)
 	}
 	t.Setenv("EVERYBODY_CODES_SESSION_COOKIE", "")
-	err := runAuthCheck(t.Context(), io.Discard)
+	err := runAuthCheck(t.Context(), everybodycodes.NewClient(apiClient), io.Discard)
 	if err == nil || !strings.Contains(err.Error(), "run ec auth") {
 		t.Fatalf("error = %v, want setup instructions", err)
 	}

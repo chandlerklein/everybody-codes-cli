@@ -1,4 +1,4 @@
-package cli
+package everybodycodes
 
 import (
 	"crypto/rand"

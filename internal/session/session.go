@@ -1,4 +1,5 @@
-package cli
+// Package session stores and loads Everybody Codes credentials.
+package session
 
 import (
 	"crypto/rand"
@@ -11,7 +12,8 @@ import (
 	"strings"
 )
 
-func loadSession() (*http.Cookie, error) {
+// Load returns the saved cookie, falling back to EVERYBODY_CODES_SESSION_COOKIE.
+func Load() (*http.Cookie, error) {
 	home, err := os.UserHomeDir()
 	if err != nil {
 		return nil, fmt.Errorf("find home directory: %w", err)
@@ -37,7 +39,8 @@ func loadSession() (*http.Cookie, error) {
 	return cookie, nil
 }
 
-func saveSessionCookie(value string) error {
+// Save replaces the saved cookie without following links.
+func Save(value string) error {
 	home, err := os.UserHomeDir()
 	if err != nil {
 		return fmt.Errorf("find home directory: %w", err)
