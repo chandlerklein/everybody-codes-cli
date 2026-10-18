@@ -1,6 +1,6 @@
 # Everybody Codes CLI
 
-`ec` downloads and decrypts your [Everybody Codes](https://everybody.codes/) quest inputs into event, quest, and part directories. It also saves your session cookie and reports local input readiness.
+`ec` downloads and decrypts your [Everybody Codes](https://everybody.codes/) quest inputs into year, quest, and part directories. It also saves your session cookie and reports local input readiness.
 
 ## Install
 
@@ -59,26 +59,32 @@ The session file takes precedence; a missing, empty, or whitespace-only file fal
 > [!CAUTION]
 > Do not commit quest inputs or descriptions. Get permission before reusing or sharing them. Add `**/input/` to your repository's `.gitignore` to exclude generated input directories.
 
-Run from your solutions directory using a quest URL or both event and quest flags:
+Run from your solutions directory using a quest URL or year and quest flags:
 
 ```sh
 ec get https://everybody.codes/event/2024/quests/1
-ec get -e 2024 -q 1
-ec get --event 2024 --quest 01
+ec get -y 2024 -q 1
+ec get --year 2024 --quest 01
 ```
 
-These commands select the same quest. `-e` and `-q` are aliases for `--event` and `--quest`; do not combine them with a URL. Quest numbers are positive decimal integers, so `01` means 1 and `08` means 8.
+These commands select the same quest. `-y` and `-q` are aliases for `--year` and `--quest`; do not combine them with a URL. Omit `--year` to use the current year, for example `ec get -q 1`. Quest numbers are positive decimal integers, so `01` means 1 and `08` means 8.
 
 Each command creates:
 
 ```text
 2024/quest-01/
-├── part-01/input/
-├── part-02/input/
-└── part-03/input/
+├── part-01/
+│   ├── answer.txt
+│   └── input/
+├── part-02/
+│   ├── answer.txt
+│   └── input/
+└── part-03/
+    ├── answer.txt
+    └── input/
 ```
 
-Each part gets `input-encoded.txt` with the encrypted input, plus `input.txt` when its decryption key is available. Quest numbers are padded to at least two digits.
+Each part gets an empty `answer.txt` and an `input/` directory containing `input-encoded.txt` with the encrypted input, plus `input.txt` when its decryption key is available. Existing `answer.txt` files are always preserved, including with `--force`. Quest numbers are padded to at least two digits.
 
 Both forms accept `--dir` before or after the quest arguments:
 
@@ -90,11 +96,17 @@ This writes under `~/projects/everybody-codes/2024/quest-01/`. The default is th
 
 Rerun after unlocking another part. Existing `input.txt` files are preserved and skipped. Pending parts reuse usable encrypted files and request fresh keys; missing or malformed encrypted files are downloaded again. When all three decoded files exist, no session or HTTP requests are needed.
 
-Inputs are account-specific: use separate output directories for different accounts. Changing the session does not replace cached or decoded files. If the server reports an unavailable quest, the error identifies the event and quest; the server may use the same response for missing events, missing quests, and inputs not yet available.
+Use `--force` (or `-f`) to download fresh encrypted inputs and overwrite existing input files:
+
+```sh
+ec get -y 2024 -q 1 --force
+```
+
+Existing files and directories are reused by default. Inputs are account-specific: use separate output directories for different accounts. Changing the session does not replace cached or decoded files unless you pass `--force`. If the server reports an unavailable quest, the error identifies the year and quest; the server may use the same response for missing events, missing quests, and inputs not yet available.
 
 ## Show local status
 
-Run from the directory containing your event folders, or pass `--dir`:
+Run from the directory containing your year folders, or pass `--dir`:
 
 ```sh
 ec status

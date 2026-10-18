@@ -7,6 +7,8 @@ import (
 	"os"
 	"os/signal"
 	"runtime/debug"
+	"strconv"
+	"time"
 
 	"github.com/spf13/cobra"
 )
@@ -47,7 +49,8 @@ func run(ctx context.Context, args []string, output io.Writer) error {
 }
 
 func newRootCommand() *cobra.Command {
-	var downloadDir, statusDir, event, questNumber string
+	var downloadDir, statusDir, year, questNumber string
+	var force bool
 	info, _ := debug.ReadBuildInfo()
 	root := &cobra.Command{
 		Use:           "ec",
@@ -61,50 +64,54 @@ func newRootCommand() *cobra.Command {
 		},
 	}
 	get := &cobra.Command{
-		Use:     "get [<quest-url> | --event <event> --quest <quest>]",
+		Use:     "get [<quest-url> | --quest <quest> [--year <year>]]",
 		Short:   "Download and decrypt Everybody Codes quest inputs",
-		Long:    "Download and decrypt Everybody Codes quest inputs using a quest URL or both --event and --quest. Quest numbers may have leading zeros.",
-		Example: "  ec get https://everybody.codes/event/2024/quests/1\n  ec get -e 2024 -q 01\n  ec get --event 2024 --quest 1 --dir solutions",
+		Long:    "Download and decrypt Everybody Codes quest inputs using a quest URL or --quest with an optional --year (defaults to the current year). Quest numbers may have leading zeros.",
+		Example: "  ec get https://everybody.codes/event/2024/quests/1\n  ec get -y 2024 -q 01\n  ec get --quest 1\n  ec get --year 2024 --quest 1 --dir solutions --force",
 		Args: func(cmd *cobra.Command, args []string) error {
-			eventSet, questSet := cmd.Flags().Changed("event"), cmd.Flags().Changed("quest")
-			if eventSet != questSet {
-				return fmt.Errorf("--event and --quest must be supplied together")
-			}
-			if eventSet {
-				if len(args) != 0 {
-					return fmt.Errorf("use either a quest URL or --event and --quest, not both")
+			yearSet, questSet := cmd.Flags().Changed("year"), cmd.Flags().Changed("quest")
+			if len(args) != 0 {
+				if yearSet || questSet {
+					return fmt.Errorf("use either a quest URL or --year and --quest, not both")
 				}
+				return cobra.ExactArgs(1)(cmd, args)
+			}
+			if questSet {
 				return nil
 			}
-			if len(args) == 0 && cmd.Flags().NFlag() == 0 {
+			if yearSet {
+				return fmt.Errorf("--quest is required when --year is supplied")
+			}
+			if cmd.Flags().NFlag() == 0 {
 				return nil
 			}
-			return cobra.ExactArgs(1)(cmd, args)
+			return fmt.Errorf("--quest is required when no quest URL is supplied")
 		},
 		RunE: func(cmd *cobra.Command, args []string) error {
 			if downloadDir == "" {
 				return fmt.Errorf("--dir requires a nonempty directory")
 			}
-			if len(args) == 0 && !cmd.Flags().Changed("event") {
+			if len(args) == 0 && !cmd.Flags().Changed("quest") {
 				return cmd.Help()
 			}
 			var q quest
 			var err error
-			if cmd.Flags().Changed("event") {
-				q, err = parseQuestFlags(event, questNumber)
+			if cmd.Flags().Changed("quest") {
+				q, err = parseQuestFlags(year, questNumber)
 			} else {
 				q, err = parseQuestURL(args[0])
 			}
 			if err != nil {
 				return err
 			}
-			return initQuest(cmd.Context(), q, downloadDir, cmd.OutOrStdout())
+			return initQuest(cmd.Context(), q, downloadDir, force, cmd.OutOrStdout())
 		},
 	}
 	root.SetVersionTemplate("ec {{.Version}}\n")
 	get.Flags().StringVar(&downloadDir, "dir", ".", "Directory for quest inputs")
-	get.Flags().StringVarP(&event, "event", "e", "", "Event identifier (for example, 2024; requires --quest)")
-	get.Flags().StringVarP(&questNumber, "quest", "q", "", "Quest number in decimal (for example, 1 or 01; requires --event)")
+	get.Flags().StringVarP(&year, "year", "y", strconv.Itoa(time.Now().Year()), "Quest year (requires --quest; defaults to the current year)")
+	get.Flags().StringVarP(&questNumber, "quest", "q", "", "Quest number in decimal (for example, 1 or 01)")
+	get.Flags().BoolVarP(&force, "force", "f", false, "Overwrite existing input files; always preserve answer.txt")
 	auth := &cobra.Command{
 		Use:   "auth",
 		Short: "Save a session cookie interactively",
@@ -127,7 +134,7 @@ func newRootCommand() *cobra.Command {
 	})
 	status := &cobra.Command{
 		Use:   "status",
-		Short: "Show local input readiness by event, quest, and part",
+		Short: "Show local input readiness by year, quest, and part",
 		Args:  cobra.ExactArgs(0),
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			if statusDir == "" {
