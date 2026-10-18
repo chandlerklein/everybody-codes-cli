@@ -31,39 +31,39 @@ var apiClient = &http.Client{
 }
 
 var questPath = regexp.MustCompile(`^/event/([A-Za-z0-9][A-Za-z0-9_-]*)/quests/([0-9]+)/?$`)
-var eventID = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9_-]*$`)
+var yearID = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9_-]*$`)
 var decimalQuestNumber = regexp.MustCompile(`^[0-9]+$`)
 
 type quest struct {
-	event  string
+	year   string
 	number int
 }
 
-func parseQuestFlags(event, rawNumber string) (quest, error) {
-	if !eventID.MatchString(event) {
-		return quest{}, errors.New("event must be a nonempty identifier containing only letters, digits, hyphens, or underscores, starting with a letter or digit")
+func parseQuestFlags(year, rawNumber string) (quest, error) {
+	if !yearID.MatchString(year) {
+		return quest{}, errors.New("year must be a nonempty identifier containing only letters, digits, hyphens, or underscores, starting with a letter or digit")
 	}
 	number, err := strconv.Atoi(rawNumber)
 	if err != nil || number < 1 || !decimalQuestNumber.MatchString(rawNumber) {
 		return quest{}, errors.New("quest number must be a positive decimal integer (for example, 1 or 01)")
 	}
-	return quest{event: event, number: number}, nil
+	return quest{year: year, number: number}, nil
 }
 
 func parseQuestURL(raw string) (quest, error) {
 	u, err := url.Parse(raw)
 	if err != nil || u.Scheme != "https" || u.Host != "everybody.codes" || u.User != nil {
-		return quest{}, errors.New("expected a quest URL: https://everybody.codes/event/<EVENT>/quests/<QUEST>")
+		return quest{}, errors.New("expected a quest URL: https://everybody.codes/event/<YEAR>/quests/<QUEST>")
 	}
 	match := questPath.FindStringSubmatch(u.EscapedPath())
 	if match == nil {
-		return quest{}, errors.New("expected a quest URL: https://everybody.codes/event/<EVENT>/quests/<QUEST>")
+		return quest{}, errors.New("expected a quest URL: https://everybody.codes/event/<YEAR>/quests/<QUEST>")
 	}
 	number, err := strconv.Atoi(match[2])
 	if err != nil || number < 1 {
 		return quest{}, errors.New("quest number must be a positive integer")
 	}
-	return quest{event: match[1], number: number}, nil
+	return quest{year: match[1], number: number}, nil
 }
 
 func loadSession() (*http.Cookie, error) {
@@ -92,7 +92,7 @@ func loadSession() (*http.Cookie, error) {
 	return cookie, nil
 }
 
-func initQuest(ctx context.Context, q quest, baseDir string, output io.Writer) error {
+func initQuest(ctx context.Context, q quest, baseDir string, force bool, output io.Writer) error {
 	if err := os.MkdirAll(baseDir, 0o755); err != nil {
 		return fmt.Errorf("create output directory: %w", err)
 	}
@@ -101,7 +101,7 @@ func initQuest(ctx context.Context, q quest, baseDir string, output io.Writer) e
 		return fmt.Errorf("open output directory: %w", err)
 	}
 	defer root.Close()
-	dir := filepath.Join(q.event, fmt.Sprintf("quest-%02d", q.number))
+	dir := filepath.Join(q.year, fmt.Sprintf("quest-%02d", q.number))
 	displayDir := filepath.Join(baseDir, dir)
 	var pending []int
 	for part := 1; part <= 3; part++ {
@@ -109,14 +109,27 @@ func initQuest(ctx context.Context, q quest, baseDir string, output io.Writer) e
 		if err := root.MkdirAll(inputDir, 0o755); err != nil {
 			return fmt.Errorf("create input directory: %w", err)
 		}
-		info, err := root.Stat(filepath.Join(inputDir, "input.txt"))
+		answerPath := filepath.Join(filepath.Dir(inputDir), "answer.txt")
+		if err := createAnswer(root, answerPath); err != nil {
+			return fmt.Errorf("create part %d answer: %w", part, err)
+		}
+		inputPath := filepath.Join(inputDir, "input.txt")
+		var info os.FileInfo
+		if force {
+			// Inspect the entry itself: replacement must never follow a link.
+			info, err = root.Lstat(inputPath)
+		} else {
+			info, err = root.Stat(inputPath)
+		}
 		switch {
 		case errors.Is(err, os.ErrNotExist):
 			pending = append(pending, part)
 		case err != nil:
 			return fmt.Errorf("check part %d notes: %w", part, err)
-		case !info.Mode().IsRegular():
+		case !info.Mode().IsRegular() && !(force && info.Mode()&os.ModeSymlink != 0):
 			return fmt.Errorf("part %d input.txt must be a regular file", part)
+		case force:
+			pending = append(pending, part)
 		}
 	}
 	if len(pending) == 0 {
@@ -126,6 +139,10 @@ func initQuest(ctx context.Context, q quest, baseDir string, output io.Writer) e
 	inputs := make(map[string]string, len(pending))
 	var missing []int
 	for _, part := range pending {
+		if force {
+			missing = append(missing, part)
+			continue
+		}
 		path := filepath.Join(partInputDir(dir, part), "input-encoded.txt")
 		encoded, err := readEncoded(root, path)
 		if err != nil {
@@ -143,7 +160,7 @@ func initQuest(ctx context.Context, q quest, baseDir string, output io.Writer) e
 	}
 	// Keys need no seed. Fetch them alongside any missing encoded inputs.
 	ctx, cancel := context.WithCancel(ctx)
-	keysURL := fmt.Sprintf("%s/event/%s/quest/%d", apiBaseURL, q.event, q.number)
+	keysURL := fmt.Sprintf("%s/event/%s/quest/%d", apiBaseURL, q.year, q.number)
 	var keys map[string]json.RawMessage
 	var keysErr error
 	keysDone := make(chan struct{})
@@ -166,7 +183,7 @@ func initQuest(ctx context.Context, q quest, baseDir string, output io.Writer) e
 		if user.Seed == nil || *user.Seed < 0 {
 			return errors.New("user response must contain a nonnegative integer seed")
 		}
-		inputURL := fmt.Sprintf("https://everybody.codes/assets/%s/%d/input/%d.json", q.event, q.number, *user.Seed)
+		inputURL := fmt.Sprintf("https://everybody.codes/assets/%s/%d/input/%d.json", q.year, q.number, *user.Seed)
 		var downloaded map[string]string
 		if err := getJSON(ctx, inputURL, cookie, &downloaded); err != nil {
 			// Missing assets can return an HTML page with HTTP 200. In that
@@ -186,7 +203,7 @@ func initQuest(ctx context.Context, q quest, baseDir string, output io.Writer) e
 				return fmt.Errorf("input response is missing encoded notes for part %d", part)
 			}
 			path := filepath.Join(partInputDir(dir, part), "input-encoded.txt")
-			if err := writeEncoded(root, path, []byte(encoded)); err != nil {
+			if err := replaceFile(root, path, []byte(encoded)); err != nil {
 				return fmt.Errorf("write encoded notes for part %d: %w", part, err)
 			}
 			inputs[strconv.Itoa(part)] = encoded
@@ -214,7 +231,11 @@ func initQuest(ctx context.Context, q quest, baseDir string, output io.Writer) e
 		if err != nil {
 			return fmt.Errorf("decode part %d notes: %w", part, err)
 		}
-		if err := writeNotes(root, filepath.Join(inputDir, "input.txt"), notes); err != nil {
+		write := writeNotes
+		if force {
+			write = replaceFile
+		}
+		if err := write(root, filepath.Join(inputDir, "input.txt"), notes); err != nil {
 			return fmt.Errorf("write part %d notes: %w", part, err)
 		}
 		if _, err := fmt.Fprintf(output, "Part %d: decoded notes saved\n", part); err != nil {
@@ -227,7 +248,7 @@ func initQuest(ctx context.Context, q quest, baseDir string, output io.Writer) e
 
 func questDownloadError(q quest, action string, err error) error {
 	if questUnavailable(err) {
-		return fmt.Errorf("%s: event %s or quest %d does not exist or is not available yet: %w", action, q.event, q.number, err)
+		return fmt.Errorf("%s: year %s or quest %d does not exist or is not available yet: %w", action, q.year, q.number, err)
 	}
 	return fmt.Errorf("%s: %w", action, err)
 }
@@ -309,19 +330,30 @@ func getJSON(ctx context.Context, endpoint string, cookie *http.Cookie, target a
 
 // Rename replaces the destination entry without following symlinks or
 // truncating another file linked to the same inode.
-func writeEncoded(root *os.Root, path string, encoded []byte) error {
+func replaceFile(root *os.Root, path string, data []byte) error {
 	temp := filepath.Join(filepath.Dir(path), ".ec-"+rand.Text()+".tmp")
 	f, err := root.OpenFile(temp, os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0o644)
 	if err != nil {
 		return err
 	}
 	defer root.Remove(temp)
-	_, writeErr := f.Write(encoded)
+	_, writeErr := f.Write(data)
 	closeErr := f.Close()
 	if err := errors.Join(writeErr, closeErr); err != nil {
 		return err
 	}
 	return root.Rename(temp, path)
+}
+
+// Existing answer entries, including directories and dangling symlinks, are
+// always preserved. Exclusive creation also protects against concurrent runs.
+func createAnswer(root *os.Root, path string) error {
+	if _, err := root.Lstat(path); err == nil {
+		return nil
+	} else if !errors.Is(err, os.ErrNotExist) {
+		return err
+	}
+	return writeNotes(root, path, nil)
 }
 
 // Exclusive creation also preserves notes written by another ec process.

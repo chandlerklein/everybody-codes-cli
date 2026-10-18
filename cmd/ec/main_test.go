@@ -12,6 +12,7 @@ import (
 	"slices"
 	"strings"
 	"testing"
+	"time"
 )
 
 func TestCommandHelp(t *testing.T) {
@@ -21,11 +22,11 @@ func TestCommandHelp(t *testing.T) {
 	}{
 		{[]string{"--help"}, "ec [command]"},
 		{[]string{"-h"}, "ec [command]"},
-		{[]string{"get"}, "ec get [<quest-url> | --event <event> --quest <quest>]"},
-		{[]string{"get", "--help"}, "ec get [<quest-url> | --event <event> --quest <quest>]"},
+		{[]string{"get"}, "ec get [<quest-url> | --quest <quest> [--year <year>]]"},
+		{[]string{"get", "--help"}, "ec get [<quest-url> | --quest <quest> [--year <year>]]"},
 		{[]string{"get", "--dir", "elsewhere", "--help"}, "ec get [<quest-url>"},
 		{[]string{"get", testURL, "-h"}, "ec get [<quest-url>"},
-		{[]string{"get", "-e", "2024", "-q", "01", "--help"}, "ec get -e 2024 -q 01"},
+		{[]string{"get", "-y", "2024", "-q", "01", "--help"}, "ec get -y 2024 -q 01"},
 		{[]string{"help", "get"}, "ec get [<quest-url>"},
 		{[]string{"auth", "--help"}, "ec auth [flags]"},
 		{[]string{"auth", "check", "--help"}, "ec auth check [flags]"},
@@ -41,7 +42,7 @@ func TestCommandHelp(t *testing.T) {
 				t.Fatalf("help = %q, want %q", output.String(), tt.want)
 			}
 			if slices.Contains(tt.args, "get") {
-				for _, flag := range []string{"-e, --event", "-q, --quest", "--dir", "leading zeros"} {
+				for _, flag := range []string{"-y, --year", "-q, --quest", "-f, --force", "--dir", "leading zeros", "current year"} {
 					if !strings.Contains(output.String(), flag) {
 						t.Fatalf("help missing %q: %s", flag, output.String())
 					}
@@ -51,7 +52,7 @@ func TestCommandHelp(t *testing.T) {
 				t.Fatal("auth help includes the download/status directory flag")
 			}
 			if !slices.Contains(tt.args, "get") {
-				if strings.Contains(output.String(), "--event") || strings.Contains(output.String(), "--quest") {
+				if strings.Contains(output.String(), "--year") || strings.Contains(output.String(), "--quest") || strings.Contains(output.String(), "--force") {
 					t.Fatal("help outside get includes quest selection flags")
 				}
 			}
@@ -133,11 +134,11 @@ func TestCommandQuestFlags(t *testing.T) {
 		args   []string
 		number int
 	}{
-		{[]string{"-e", "2024", "-q", "1"}, 1},
-		{[]string{"--event", "2024", "--quest", "01"}, 1},
-		{[]string{"-q", "08", "-e", "2024"}, 8},
-		{[]string{"--event=2024", "--quest=09"}, 9},
-		{[]string{"-e2024", "-q00010"}, 10},
+		{[]string{"-y", "2024", "-q", "1"}, 1},
+		{[]string{"--year", "2024", "--quest", "01"}, 1},
+		{[]string{"-q", "08", "-y", "2024"}, 8},
+		{[]string{"--year=2024", "--quest=09"}, 9},
+		{[]string{"-y2024", "-q00010"}, 10},
 	} {
 		t.Run(strings.Join(tt.args, " "), func(t *testing.T) {
 			api := setup(t)
@@ -175,29 +176,68 @@ func TestCommandQuestFlags(t *testing.T) {
 	}
 }
 
+func TestCommandQuestDefaultsToCurrentYear(t *testing.T) {
+	for _, flag := range []string{"-q", "--quest"} {
+		t.Run(flag, func(t *testing.T) {
+			api := setup(t)
+			year := time.Now().Year()
+			keysEndpoint := fmt.Sprintf("%s/event/%d/quest/1", apiBaseURL, year)
+			inputsEndpoint := fmt.Sprintf("https://everybody.codes/assets/%d/1/input/8.json", year)
+			api.bodies[keysEndpoint] = api.bodies[keysURL]
+			api.bodies[inputsEndpoint] = api.bodies[inputsURL]
+			if err := run(t.Context(), []string{"get", flag, "01", "--dir", "solutions"}, io.Discard); err != nil {
+				t.Fatal(err)
+			}
+			for part := 1; part <= 3; part++ {
+				dir := fmt.Sprintf("solutions/%d/quest-01/part-%02d", year, part)
+				assertFile(t, filepath.Join(dir, "input", "input.txt"), testNotes[part-1].plain)
+				assertFile(t, filepath.Join(dir, "answer.txt"), "")
+			}
+			wantCalls := []string{userURL, inputsEndpoint, keysEndpoint}
+			slices.Sort(api.calls)
+			slices.Sort(wantCalls)
+			if !slices.Equal(api.calls, wantCalls) {
+				t.Fatalf("requests = %v, want %v", api.calls, wantCalls)
+			}
+		})
+	}
+}
+
 func TestCommandRejectsInvalidQuestFlagsWithoutSideEffects(t *testing.T) {
 	for _, tt := range []struct {
 		args []string
 		want string
 	}{
-		{[]string{"-e", "2024"}, "--event and --quest must be supplied together"},
-		{[]string{"-q", "1"}, "--event and --quest must be supplied together"},
-		{[]string{testURL, "-e", "2024", "-q", "1"}, "use either a quest URL"},
-		{[]string{"-e", "", "-q", "1"}, "event must be"},
-		{[]string{"-e", "../2024", "-q", "1"}, "event must be"},
-		{[]string{"-e", "2024/quests/1", "-q", "1"}, "event must be"},
-		{[]string{"-e", "2024?foo", "-q", "1"}, "event must be"},
-		{[]string{"-e", "2024", "-q", ""}, "quest number must be"},
-		{[]string{"-e", "2024", "-q", "0"}, "quest number must be"},
-		{[]string{"-e", "2024", "-q", "-1"}, "quest number must be"},
-		{[]string{"-e", "2024", "-q", "one"}, "quest number must be"},
-		{[]string{"-e", "2024", "-q", "1.5"}, "quest number must be"},
-		{[]string{"-e", "2024", "-q", "0x01"}, "quest number must be"},
-		{[]string{"-e", "2024", "-q", "999999999999999999999"}, "quest number must be"},
-		{[]string{"-e", "2024", "-q"}, "flag needs an argument"},
-		{[]string{"-e", "2024", "-q", "1", "--dir="}, "--dir requires a nonempty directory"},
-		{[]string{"auth", "-e", "2024", "-q", "1"}, "unsupported auth flags"},
-		{[]string{"status", "-e", "2024", "-q", "1"}, "unknown shorthand flag"},
+		{[]string{"-y", "2024"}, "--quest is required when --year is supplied"},
+		{[]string{testURL, "-y", "2024", "-q", "1"}, "use either a quest URL"},
+		{[]string{testURL, "--year", "2024"}, "use either a quest URL"},
+		{[]string{testURL, "--quest", "1"}, "use either a quest URL"},
+		{[]string{"--dir", "elsewhere"}, "--quest is required when no quest URL is supplied"},
+		{[]string{"--force"}, "--quest is required when no quest URL is supplied"},
+		{[]string{"-f"}, "--quest is required when no quest URL is supplied"},
+		{[]string{"--year", "2024", "--force"}, "--quest is required when --year is supplied"},
+		{[]string{"--event", "2024", "--quest", "1"}, "unknown flag: --event"},
+		{[]string{"-e", "2024", "-q", "1"}, "unknown shorthand flag"},
+		{[]string{"-y", "", "-q", "1"}, "year must be"},
+		{[]string{"-y", "../2024", "-q", "1"}, "year must be"},
+		{[]string{"-y", "2024/quests/1", "-q", "1"}, "year must be"},
+		{[]string{"-y", "2024?foo", "-q", "1"}, "year must be"},
+		{[]string{"-y", "2024", "-q", ""}, "quest number must be"},
+		{[]string{"-y", "2024", "-q", "0"}, "quest number must be"},
+		{[]string{"-y", "2024", "-q", "-1"}, "quest number must be"},
+		{[]string{"-y", "2024", "-q", "one"}, "quest number must be"},
+		{[]string{"-y", "2024", "-q", "1.5"}, "quest number must be"},
+		{[]string{"-y", "2024", "-q", "0x01"}, "quest number must be"},
+		{[]string{"-y", "2024", "-q", "999999999999999999999"}, "quest number must be"},
+		{[]string{"-y", "2024", "-q"}, "flag needs an argument"},
+		{[]string{"-y", "2024", "-q", "1", "--dir="}, "--dir requires a nonempty directory"},
+		{[]string{"auth", "-y", "2024", "-q", "1"}, "unsupported auth flags"},
+		{[]string{"status", "-y", "2024", "-q", "1"}, "unknown shorthand flag"},
+		{[]string{"auth", "--force"}, "unsupported auth flags"},
+		{[]string{"auth", "-f"}, "unsupported auth flags"},
+		{[]string{"auth", "check", "--force"}, "unsupported auth flags"},
+		{[]string{"status", "--force"}, "unknown flag: --force"},
+		{[]string{"status", "-f"}, "unknown shorthand flag"},
 	} {
 		t.Run(strings.Join(tt.args, " "), func(t *testing.T) {
 			api := setup(t)
@@ -214,6 +254,8 @@ func TestCommandRejectsInvalidQuestFlagsWithoutSideEffects(t *testing.T) {
 				t.Fatalf("invalid arguments caused requests %v or output %q", api.calls, output.String())
 			}
 			assertMissing(t, "2024")
+			assertMissing(t, fmt.Sprint(time.Now().Year()))
+			assertMissing(t, "elsewhere")
 		})
 	}
 }
@@ -223,8 +265,8 @@ func TestCommandRejectsInvalidArgumentsWithoutSideEffects(t *testing.T) {
 		{testURL},
 		{"--", testURL},
 		{testURL, "--dir", "elsewhere"},
-		{"-e", "2024", "-q", "1"},
-		{"--event", "2024", "--quest", "1"},
+		{"-y", "2024", "-q", "1"},
+		{"--year", "2024", "--quest", "1"},
 		{"--dir", "elsewhere"},
 		{"get", testURL, "extra"},
 		{"get", "auth"},
