@@ -76,11 +76,17 @@ func newRootCommand() *cobra.Command {
 				}
 				return nil
 			}
+			if len(args) == 0 && cmd.Flags().NFlag() == 0 {
+				return nil
+			}
 			return cobra.ExactArgs(1)(cmd, args)
 		},
 		RunE: func(cmd *cobra.Command, args []string) error {
 			if downloadDir == "" {
 				return fmt.Errorf("--dir requires a nonempty directory")
+			}
+			if len(args) == 0 && !cmd.Flags().Changed("event") {
+				return cmd.Help()
 			}
 			var q quest
 			var err error
