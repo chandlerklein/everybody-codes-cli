@@ -36,6 +36,7 @@ func setup(t *testing.T) *testAPI {
 	t.Helper()
 	t.Chdir(t.TempDir())
 	t.Setenv("HOME", t.TempDir())
+	t.Setenv("EVERYBODY_CODES_SESSION_COOKIE", "")
 	writeTestFile(t, filepath.Join(os.Getenv("HOME"), ".config", "everybody-codes", "session"), testSession+"\n")
 	inputs := map[string]string{}
 	for i := 0; i < 3; i++ {
@@ -123,7 +124,7 @@ func TestInitQuest(t *testing.T) {
 		t.Fatal(err)
 	}
 	var output bytes.Buffer
-	if err := run(context.Background(), []string{"init", testURL}, &output); err != nil {
+	if err := run(context.Background(), []string{testURL}, &output); err != nil {
 		t.Fatal(err)
 	}
 	for part := 1; part <= 3; part++ {
@@ -142,7 +143,7 @@ func TestInitQuest(t *testing.T) {
 	if err := os.Remove(filepath.Join(os.Getenv("HOME"), ".config", "everybody-codes", "session")); err != nil {
 		t.Fatal(err)
 	}
-	if err := run(context.Background(), []string{"init", testURL}, &output); err != nil {
+	if err := run(context.Background(), []string{testURL}, &output); err != nil {
 		t.Fatal(err)
 	}
 	if len(api.calls) != 3 {
@@ -153,7 +154,7 @@ func TestInitQuest(t *testing.T) {
 func TestInitQuestUnlocksPartsOnRerun(t *testing.T) {
 	api := setup(t)
 	api.bodies[keysURL] = jsonString(t, map[string]any{"key1": testKey, "key2": nil})
-	if err := run(context.Background(), []string{"init", testURL}, io.Discard); err != nil {
+	if err := run(context.Background(), []string{testURL}, io.Discard); err != nil {
 		t.Fatal(err)
 	}
 	for part := 2; part <= 3; part++ {
@@ -165,7 +166,7 @@ func TestInitQuestUnlocksPartsOnRerun(t *testing.T) {
 	// Completed parts are skipped even if their remote input and key are unusable.
 	api.bodies[inputsURL] = jsonString(t, map[string]string{"2": testNotes[1].encoded, "3": testNotes[2].encoded})
 	api.bodies[keysURL] = jsonString(t, map[string]any{"key1": 42, "key2": testKey, "key3": testKey})
-	if err := run(context.Background(), []string{"init", testURL}, io.Discard); err != nil {
+	if err := run(context.Background(), []string{testURL}, io.Discard); err != nil {
 		t.Fatal(err)
 	}
 	assertFile(t, "2024/quest-01/part-01/input/input.txt", "keep my existing notes")
@@ -183,7 +184,7 @@ func TestInitQuestTwoDigitNumber(t *testing.T) {
 	api.bodies[keyEndpoint] = api.bodies[keysURL]
 	delete(api.bodies, inputsURL)
 	delete(api.bodies, keysURL)
-	if err := run(context.Background(), []string{"init", "https://everybody.codes/event/2024/quests/12"}, io.Discard); err != nil {
+	if err := run(context.Background(), []string{"https://everybody.codes/event/2024/quests/12"}, io.Discard); err != nil {
 		t.Fatal(err)
 	}
 	for part := 1; part <= 3; part++ {
@@ -202,12 +203,12 @@ func TestInitQuestDirectoryFlag(t *testing.T) {
 		name, dir string
 		args      []string
 	}{
-		{"before URL", "elsewhere", []string{"init", "--dir", "elsewhere", testURL}},
-		{"after URL", "elsewhere", []string{"init", testURL, "--dir", "elsewhere"}},
-		{"equals syntax", "nested/destination", []string{"init", "--dir=nested/destination", testURL}},
-		{"space in path", "my solutions", []string{"init", testURL, "--dir=my solutions"}},
-		{"absolute path", absoluteDir, []string{"init", "--dir", absoluteDir, testURL}},
-		{"end of options", "elsewhere", []string{"init", "--dir", "elsewhere", "--", testURL}},
+		{"before URL", "elsewhere", []string{"--dir", "elsewhere", testURL}},
+		{"after URL", "elsewhere", []string{testURL, "--dir", "elsewhere"}},
+		{"equals syntax", "nested/destination", []string{"--dir=nested/destination", testURL}},
+		{"space in path", "my solutions", []string{testURL, "--dir=my solutions"}},
+		{"absolute path", absoluteDir, []string{"--dir", absoluteDir, testURL}},
+		{"end of options", "elsewhere", []string{"--dir", "elsewhere", "--", testURL}},
 	} {
 		t.Run(tt.name, func(t *testing.T) {
 			api := setup(t)
@@ -246,12 +247,12 @@ func TestRunInvalidDirectoryFlag(t *testing.T) {
 		name, want string
 		args       []string
 	}{
-		{"missing value", "requires a directory", []string{"init", testURL, "--dir"}},
-		{"empty value", "requires a nonempty directory", []string{"init", "--dir", "", testURL}},
-		{"empty equals value", "requires a nonempty directory", []string{"init", testURL, "--dir="}},
-		{"unknown option", "unknown option", []string{"init", "--directory", "elsewhere", testURL}},
-		{"missing URL", usage, []string{"init", "--dir", "elsewhere"}},
-		{"flag after end of options", usage, []string{"init", "--", testURL, "--dir", "elsewhere"}},
+		{"missing value", "requires a directory", []string{testURL, "--dir"}},
+		{"empty value", "requires a nonempty directory", []string{"--dir", "", testURL}},
+		{"empty equals value", "requires a nonempty directory", []string{testURL, "--dir="}},
+		{"unknown option", "unknown option", []string{"--directory", "elsewhere", testURL}},
+		{"missing URL", usage, []string{"--dir", "elsewhere"}},
+		{"flag after end of options", usage, []string{"--", testURL, "--dir", "elsewhere"}},
 	} {
 		t.Run(tt.name, func(t *testing.T) {
 			api := setup(t)
@@ -284,7 +285,7 @@ func TestInitQuestFileConflicts(t *testing.T) {
 			} else {
 				writeTestFile(t, tt.path, "existing file")
 			}
-			err := run(context.Background(), []string{"init", testURL}, io.Discard)
+			err := run(context.Background(), []string{testURL}, io.Discard)
 			if err == nil || !strings.Contains(err.Error(), tt.want) {
 				t.Fatalf("error = %v, want %q", err, tt.want)
 			}
@@ -327,7 +328,7 @@ func TestInitQuestFailures(t *testing.T) {
 			api.bodies[tt.endpoint] = tt.body
 			api.statuses[tt.endpoint] = tt.status
 			var output bytes.Buffer
-			err := run(context.Background(), []string{"init", testURL}, &output)
+			err := run(context.Background(), []string{testURL}, &output)
 			if err == nil || !strings.Contains(err.Error(), tt.want) {
 				t.Fatalf("error = %v, want %q", err, tt.want)
 			}
@@ -358,7 +359,7 @@ func TestSessionFile(t *testing.T) {
 			} else {
 				writeTestFile(t, path, tt.value)
 			}
-			err := run(context.Background(), []string{"init", testURL}, io.Discard)
+			err := run(context.Background(), []string{testURL}, io.Discard)
 			if err == nil || !strings.Contains(err.Error(), "session file") {
 				t.Fatalf("error = %v, want session file error", err)
 			}
@@ -367,6 +368,63 @@ func TestSessionFile(t *testing.T) {
 			}
 			if len(api.calls) != 0 {
 				t.Error("invalid session caused HTTP requests")
+			}
+		})
+	}
+}
+
+func TestSessionCookieFallback(t *testing.T) {
+	for _, tt := range []struct {
+		name, file, env, wantErr string
+		missing                  bool
+	}{
+		{"file takes precedence", testSession, "different-environment-cookie", "", false},
+		{"missing file", "", testSession, "", true},
+		{"empty file", "", testSession, "", false},
+		{"whitespace file", " \n\t", testSession, "", false},
+		{"trim environment value", "", " \t" + testSession + "\n", "", true},
+		{"both missing", "", "", "missing or empty", true},
+		{"both whitespace", " \n", " \t", "missing or empty", false},
+		{"invalid environment cookie", "", "sensitive;environment-cookie", "EVERYBODY_CODES_SESSION_COOKIE must contain a valid raw cookie value", true},
+		{"invalid file takes precedence", "sensitive;file-cookie", testSession, "must contain a valid raw cookie value", false},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			api := setup(t)
+			t.Setenv("EVERYBODY_CODES_SESSION_COOKIE", tt.env)
+			path := filepath.Join(os.Getenv("HOME"), ".config", "everybody-codes", "session")
+			if tt.missing {
+				if err := os.Remove(path); err != nil {
+					t.Fatal(err)
+				}
+			} else {
+				writeTestFile(t, path, tt.file)
+			}
+			var output bytes.Buffer
+			err := run(context.Background(), []string{testURL}, &output)
+			if tt.wantErr == "" {
+				if err != nil {
+					t.Fatal(err)
+				}
+				if len(api.calls) != 3 {
+					t.Errorf("made %d requests, want 3", len(api.calls))
+				}
+				assertFile(t, "2024/quest-01/part-01/input/input.txt", testNotes[0].plain)
+			} else {
+				if err == nil || !strings.Contains(err.Error(), tt.wantErr) {
+					t.Fatalf("error = %v, want %q", err, tt.wantErr)
+				}
+				if len(api.calls) != 0 {
+					t.Error("invalid credentials caused HTTP requests")
+				}
+			}
+			logged := output.String()
+			if err != nil {
+				logged += err.Error()
+			}
+			for _, value := range []string{tt.file, tt.env} {
+				if secret := strings.TrimSpace(value); secret != "" && strings.Contains(logged, secret) {
+					t.Error("session cookie was exposed")
+				}
 			}
 		})
 	}
@@ -406,12 +464,12 @@ func TestParseQuestURL(t *testing.T) {
 }
 
 func TestRunUsage(t *testing.T) {
-	for _, args := range [][]string{nil, {"init"}, {"unknown", testURL}, {"init", testURL, "extra"}} {
+	for _, args := range [][]string{nil, {"unknown", testURL}, {testURL, "extra"}, {"init", testURL}} {
 		if err := run(context.Background(), args, io.Discard); err == nil || err.Error() != usage {
 			t.Errorf("run(%v) error = %v, want usage", args, err)
 		}
 	}
-	for _, args := range [][]string{{"--help"}, {"-h"}, {"init", "--help"}, {"init", "-h"}} {
+	for _, args := range [][]string{{"--help"}, {"-h"}, {"--dir", "elsewhere", "--help"}, {testURL, "-h"}} {
 		var output bytes.Buffer
 		if err := run(context.Background(), args, &output); err != nil || strings.TrimSpace(output.String()) != usage {
 			t.Errorf("help output = %q, error = %v", output.String(), err)

@@ -9,7 +9,7 @@ import (
 	"strings"
 )
 
-const usage = "usage: ec init [--dir <directory>] https://everybody.codes/event/<EVENT>/quests/<QUEST>"
+const usage = "usage: ec [--dir <directory>] https://everybody.codes/event/<EVENT>/quests/<QUEST>"
 
 func main() {
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt)
@@ -21,16 +21,9 @@ func main() {
 }
 
 func run(ctx context.Context, args []string, output io.Writer) error {
-	if len(args) == 1 && (args[0] == "--help" || args[0] == "-h") {
-		_, err := fmt.Fprintln(output, usage)
-		return err
-	}
-	if len(args) == 0 || args[0] != "init" {
-		return fmt.Errorf("%s", usage)
-	}
 	dir := "."
 	var positional []string
-	for i := 1; i < len(args); i++ {
+	for i := 0; i < len(args); i++ {
 		arg := args[i]
 		switch {
 		case arg == "--dir":

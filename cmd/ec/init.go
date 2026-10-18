@@ -46,12 +46,21 @@ func loadSession() (*http.Cookie, error) {
 	}
 	path := filepath.Join(home, ".config", "everybody-codes", "session")
 	value, err := os.ReadFile(path)
-	if err != nil {
+	if err != nil && !errors.Is(err, os.ErrNotExist) {
 		return nil, fmt.Errorf("read session file %s: %w", path, err)
 	}
-	cookie := &http.Cookie{Name: "everybody-codes", Value: strings.TrimSpace(string(value))}
-	if cookie.Value == "" || cookie.Valid() != nil {
-		return nil, fmt.Errorf("session file %s must contain a valid raw cookie value", path)
+	session := strings.TrimSpace(string(value))
+	source := fmt.Sprintf("session file %s", path)
+	if session == "" {
+		session = strings.TrimSpace(os.Getenv("EVERYBODY_CODES_SESSION_COOKIE"))
+		source = "EVERYBODY_CODES_SESSION_COOKIE"
+		if session == "" {
+			return nil, fmt.Errorf("session file %s is missing or empty; add your cookie there or set EVERYBODY_CODES_SESSION_COOKIE", path)
+		}
+	}
+	cookie := &http.Cookie{Name: "everybody-codes", Value: session}
+	if cookie.Valid() != nil {
+		return nil, fmt.Errorf("%s must contain a valid raw cookie value", source)
 	}
 	return cookie, nil
 }

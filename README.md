@@ -24,14 +24,20 @@ Save your raw `everybody-codes` cookie value in `~/.config/everybody-codes/sessi
 chmod 600 ~/.config/everybody-codes/session
 ```
 
-The CLI reads this file directly and does not log the cookie. It does not require an environment variable.
+The CLI uses this file first. If the file is missing, empty, or contains only whitespace, it falls back to `EVERYBODY_CODES_SESSION_COOKIE`. For example, in Fish:
+
+```fish
+set -gx EVERYBODY_CODES_SESSION_COOKIE 'your-cookie-value'
+```
+
+The cookie value is never logged, regardless of its source. A nonempty session file takes precedence over the environment variable. If neither source has a value, the CLI reports an error.
 
 ## Initialize a quest
 
 Run from the directory where you keep your quest solutions:
 
 ```sh
-ec init https://everybody.codes/event/2024/quests/1
+ec https://everybody.codes/event/2024/quests/1
 ```
 
 This creates:
@@ -50,7 +56,7 @@ Existing directories are reused. Parts that already have `input.txt` are skipped
 To create the quest under a different directory, use `--dir`:
 
 ```sh
-ec init https://everybody.codes/event/2024/quests/1 --dir ~/projects/everybody-codes
+ec https://everybody.codes/event/2024/quests/1 --dir ~/projects/everybody-codes
 ```
 
 This creates `~/projects/everybody-codes/2024/quest-01/`. The flag accepts absolute or relative paths and can appear before or after the URL. Missing directories are created automatically. Without `--dir`, the current directory is used.
