@@ -88,18 +88,18 @@ func TestGetJSONResponseLimit(t *testing.T) {
 	}
 }
 
-func TestInitQuestReplacesEncodedLinks(t *testing.T) {
+func TestInitQuestIgnoresEncodedLinks(t *testing.T) {
 	for _, kind := range []string{"external symlink", "internal symlink", "hard link"} {
 		t.Run(kind, func(t *testing.T) {
 			setup(t)
-			dir := "2024/quest-01/part-01/input"
+			dir := "2024/quest-01/part-01"
 			if err := os.MkdirAll(dir, 0o755); err != nil {
 				t.Fatal(err)
 			}
 			target := filepath.Join(t.TempDir(), "unrelated.txt")
 			linkTarget := target
 			if kind == "internal symlink" {
-				target = "2024/quest-01/part-01/unrelated.txt"
+				target = "2024/quest-01/unrelated.txt"
 				linkTarget = "../unrelated.txt"
 			}
 			writeTestFile(t, target, "keep this file")
@@ -115,18 +115,21 @@ func TestInitQuestReplacesEncodedLinks(t *testing.T) {
 				t.Fatal(err)
 			}
 			assertFile(t, target, "keep this file")
-			assertFile(t, path, testNotes[0].encoded)
+			assertFile(t, path, "keep this file")
 			assertFile(t, filepath.Join(dir, "input.txt"), testNotes[0].plain)
 			info, err := os.Lstat(path)
-			if err != nil || !info.Mode().IsRegular() {
-				t.Fatalf("encoded file was not replaced by a regular file: %v", err)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if kind != "hard link" && info.Mode()&os.ModeSymlink == 0 {
+				t.Fatal("legacy encoded symlink was replaced")
 			}
 			entries, err := os.ReadDir(dir)
 			if err != nil {
 				t.Fatal(err)
 			}
 			if len(entries) != 2 {
-				t.Errorf("input directory has %d entries, want 2 (no temporary files)", len(entries))
+				t.Errorf("part directory has %d entries, want 2 (no temporary files)", len(entries))
 			}
 		})
 	}
@@ -137,7 +140,6 @@ func TestInitQuestRejectsDirectoryEscape(t *testing.T) {
 		"2024",
 		"2024/quest-01",
 		"2024/quest-01/part-01",
-		"2024/quest-01/part-01/input",
 	} {
 		t.Run(path, func(t *testing.T) {
 			api := setup(t)

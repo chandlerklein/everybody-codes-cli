@@ -2,9 +2,7 @@ package main
 
 import (
 	"context"
-	"crypto/aes"
 	"crypto/rand"
-	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -105,11 +103,11 @@ func initQuest(ctx context.Context, q quest, baseDir string, force bool, output 
 	displayDir := filepath.Join(baseDir, dir)
 	var pending []int
 	for part := 1; part <= 3; part++ {
-		inputDir := partInputDir(dir, part)
-		if err := root.MkdirAll(inputDir, 0o755); err != nil {
-			return fmt.Errorf("create input directory: %w", err)
+		partPath := partDir(dir, part)
+		if err := root.MkdirAll(partPath, 0o755); err != nil {
+			return fmt.Errorf("create part directory: %w", err)
 		}
-		inputPath := filepath.Join(inputDir, "input.txt")
+		inputPath := filepath.Join(partPath, "input.txt")
 		var info os.FileInfo
 		if force {
 			// Inspect the entry itself: replacement must never follow a link.
@@ -132,29 +130,11 @@ func initQuest(ctx context.Context, q quest, baseDir string, force bool, output 
 		_, err := fmt.Fprintf(output, "%s: all notes already exist\n", displayDir)
 		return err
 	}
-	inputs := make(map[string]string, len(pending))
-	var missing []int
-	for _, part := range pending {
-		if force {
-			missing = append(missing, part)
-			continue
-		}
-		path := filepath.Join(partInputDir(dir, part), "input-encoded.txt")
-		encoded, err := readEncoded(root, path)
-		if err != nil {
-			return fmt.Errorf("read encoded notes for part %d: %w", part, err)
-		}
-		if encoded == "" {
-			missing = append(missing, part)
-			continue
-		}
-		inputs[strconv.Itoa(part)] = encoded
-	}
 	cookie, err := loadSession()
 	if err != nil {
 		return err
 	}
-	// Keys need no seed. Fetch them alongside any missing encoded inputs.
+	// Keys need no seed. Fetch them alongside the encoded inputs.
 	ctx, cancel := context.WithCancel(ctx)
 	keysURL := fmt.Sprintf("%s/event/%s/quest/%d", apiBaseURL, q.year, q.number)
 	var keys map[string]json.RawMessage
@@ -169,41 +149,28 @@ func initQuest(ctx context.Context, q quest, baseDir string, force bool, output 
 		<-keysDone
 	}()
 
-	if len(missing) > 0 {
-		var user struct {
-			Seed *int64 `json:"seed"`
-		}
-		if err := getJSON(ctx, apiBaseURL+"/user/me", cookie, &user); err != nil {
-			return fmt.Errorf("get user seed: %w", err)
-		}
-		if user.Seed == nil || *user.Seed < 0 {
-			return errors.New("user response must contain a nonnegative integer seed")
-		}
-		inputURL := fmt.Sprintf("https://everybody.codes/assets/%s/%d/input/%d.json", q.year, q.number, *user.Seed)
-		var downloaded map[string]string
-		if err := getJSON(ctx, inputURL, cookie, &downloaded); err != nil {
-			// Missing assets can return an HTML page with HTTP 200. In that
-			// case, use the API's result to identify an unavailable quest.
-			var syntaxErr *json.SyntaxError
-			if errors.As(err, &syntaxErr) {
-				<-keysDone
-				if questUnavailable(keysErr) {
-					return questDownloadError(q, "get quest keys", keysErr)
-				}
+	var user struct {
+		Seed *int64 `json:"seed"`
+	}
+	if err := getJSON(ctx, apiBaseURL+"/user/me", cookie, &user); err != nil {
+		return fmt.Errorf("get user seed: %w", err)
+	}
+	if user.Seed == nil || *user.Seed < 0 {
+		return errors.New("user response must contain a nonnegative integer seed")
+	}
+	inputURL := fmt.Sprintf("https://everybody.codes/assets/%s/%d/input/%d.json", q.year, q.number, *user.Seed)
+	var inputs map[string]string
+	if err := getJSON(ctx, inputURL, cookie, &inputs); err != nil {
+		// Missing assets can return an HTML page with HTTP 200. In that
+		// case, use the API's result to identify an unavailable quest.
+		var syntaxErr *json.SyntaxError
+		if errors.As(err, &syntaxErr) {
+			<-keysDone
+			if questUnavailable(keysErr) {
+				return questDownloadError(q, "get quest keys", keysErr)
 			}
-			return questDownloadError(q, "get encoded notes", err)
 		}
-		for _, part := range missing {
-			encoded, ok := downloaded[strconv.Itoa(part)]
-			if !ok || encoded == "" {
-				return fmt.Errorf("input response is missing encoded notes for part %d", part)
-			}
-			path := filepath.Join(partInputDir(dir, part), "input-encoded.txt")
-			if err := replaceFile(root, path, []byte(encoded)); err != nil {
-				return fmt.Errorf("write encoded notes for part %d: %w", part, err)
-			}
-			inputs[strconv.Itoa(part)] = encoded
-		}
+		return questDownloadError(q, "get encoded notes", err)
 	}
 	<-keysDone
 	if keysErr != nil {
@@ -217,13 +184,17 @@ func initQuest(ctx context.Context, q quest, baseDir string, force bool, output 
 			}
 		}
 		if key == "" {
-			if _, err := fmt.Fprintf(output, "Part %d: encoded notes saved; key not available yet\n", part); err != nil {
+			if _, err := fmt.Fprintf(output, "Part %d: locked; key not available yet\n", part); err != nil {
 				return err
 			}
 			continue
 		}
-		inputDir := partInputDir(dir, part)
-		notes, err := decryptNotes(inputs[strconv.Itoa(part)], key)
+		encoded := inputs[strconv.Itoa(part)]
+		if encoded == "" {
+			return fmt.Errorf("input response is missing encoded notes for part %d", part)
+		}
+		partPath := partDir(dir, part)
+		notes, err := decryptNotes(encoded, key)
 		if err != nil {
 			return fmt.Errorf("decode part %d notes: %w", part, err)
 		}
@@ -231,7 +202,7 @@ func initQuest(ctx context.Context, q quest, baseDir string, force bool, output 
 		if force {
 			write = replaceFile
 		}
-		if err := write(root, filepath.Join(inputDir, "input.txt"), notes); err != nil {
+		if err := write(root, filepath.Join(partPath, "input.txt"), notes); err != nil {
 			return fmt.Errorf("write part %d notes: %w", part, err)
 		}
 		if _, err := fmt.Fprintf(output, "Part %d: decoded notes saved\n", part); err != nil {
@@ -254,45 +225,8 @@ func questUnavailable(err error) bool {
 	return errors.As(err, &status) && (status.statusCode == http.StatusNotFound || status.statusCode == http.StatusUnprocessableEntity)
 }
 
-func partInputDir(dir string, part int) string {
-	return filepath.Join(dir, fmt.Sprintf("part-%02d", part), "input")
-}
-
-// Cache entries are reusable only when they are regular files containing
-// complete hexadecimal AES blocks. Missing or malformed caches are downloaded
-// again; filesystem failures are reported instead of silently ignored.
-func readEncoded(root *os.Root, path string) (string, error) {
-	info, err := root.Lstat(path)
-	if errors.Is(err, os.ErrNotExist) {
-		return "", nil
-	}
-	if err != nil {
-		return "", err
-	}
-	if info.Mode()&os.ModeSymlink != 0 {
-		return "", nil
-	}
-	if !info.Mode().IsRegular() {
-		return "", errors.New("input-encoded.txt must be a regular file")
-	}
-	f, err := root.Open(path)
-	if err != nil {
-		return "", err
-	}
-	defer f.Close()
-	data, err := io.ReadAll(io.LimitReader(f, maxJSONResponseBytes+1))
-	if err != nil {
-		return "", err
-	}
-	if len(data) > maxJSONResponseBytes {
-		return "", nil
-	}
-	encoded := strings.TrimSpace(string(data))
-	decoded, err := hex.DecodeString(encoded)
-	if err != nil || len(decoded) == 0 || len(decoded)%aes.BlockSize != 0 {
-		return "", nil
-	}
-	return encoded, nil
+func partDir(dir string, part int) string {
+	return filepath.Join(dir, fmt.Sprintf("part-%02d", part))
 }
 
 func getJSON(ctx context.Context, endpoint string, cookie *http.Cookie, target any) error {

@@ -126,7 +126,7 @@ func assertMissing(t *testing.T, path string) {
 func TestInitQuest(t *testing.T) {
 	api := setup(t)
 	// Existing directories must not prevent initialization.
-	if err := os.MkdirAll("2024/quest-01/part-02/input", 0o755); err != nil {
+	if err := os.MkdirAll("2024/quest-01/part-02", 0o755); err != nil {
 		t.Fatal(err)
 	}
 	var output bytes.Buffer
@@ -134,10 +134,11 @@ func TestInitQuest(t *testing.T) {
 		t.Fatal(err)
 	}
 	for part := 1; part <= 3; part++ {
-		dir := fmt.Sprintf("2024/quest-01/part-%02d/input", part)
-		assertFile(t, filepath.Join(dir, "input-encoded.txt"), testNotes[part-1].encoded)
+		dir := fmt.Sprintf("2024/quest-01/part-%02d", part)
+		assertMissing(t, filepath.Join(dir, "input"))
+		assertMissing(t, filepath.Join(dir, "input-encoded.txt"))
 		assertFile(t, filepath.Join(dir, "input.txt"), testNotes[part-1].plain)
-		assertMissing(t, filepath.Join(filepath.Dir(dir), "answer.txt"))
+		assertMissing(t, filepath.Join(dir, "answer.txt"))
 	}
 	wantCalls := []string{userURL, inputsURL, keysURL}
 	slices.Sort(api.calls)
@@ -171,20 +172,17 @@ func TestInitQuestForceRefreshesCompletedInputs(t *testing.T) {
 		t.Run(strings.Join(args[1:], " "), func(t *testing.T) {
 			api := setup(t)
 			for part := 1; part <= 3; part++ {
-				dir := fmt.Sprintf("2024/quest-01/part-%02d/input", part)
-				// Valid stale ciphertext must be downloaded again, even when
-				// decoded notes already exist.
-				writeTestFile(t, filepath.Join(dir, "input-encoded.txt"), testNotes[part%3].encoded)
+				dir := fmt.Sprintf("2024/quest-01/part-%02d", part)
 				writeTestFile(t, filepath.Join(dir, "input.txt"), "old notes")
 			}
 			if err := run(t.Context(), args, io.Discard); err != nil {
 				t.Fatal(err)
 			}
 			for part := 1; part <= 3; part++ {
-				dir := fmt.Sprintf("2024/quest-01/part-%02d/input", part)
-				assertFile(t, filepath.Join(dir, "input-encoded.txt"), testNotes[part-1].encoded)
+				dir := fmt.Sprintf("2024/quest-01/part-%02d", part)
+				assertMissing(t, filepath.Join(dir, "input-encoded.txt"))
 				assertFile(t, filepath.Join(dir, "input.txt"), testNotes[part-1].plain)
-				assertMissing(t, filepath.Join(filepath.Dir(dir), "answer.txt"))
+				assertMissing(t, filepath.Join(dir, "answer.txt"))
 			}
 			wantCalls := []string{userURL, inputsURL, keysURL}
 			slices.Sort(api.calls)
@@ -203,7 +201,7 @@ func TestInitQuestPreservesCompletedFilesByDefault(t *testing.T) {
 			before := map[string]os.FileInfo{}
 			for part := 1; part <= 3; part++ {
 				dir := fmt.Sprintf("2024/quest-01/part-%02d", part)
-				for _, file := range []string{"input/input-encoded.txt", "input/input.txt", "answer.txt"} {
+				for _, file := range []string{"input.txt", "answer.txt"} {
 					path := filepath.Join(dir, file)
 					writeTestFile(t, path, "existing "+file)
 					oldTime := time.Unix(1000000000, 0)
@@ -239,9 +237,6 @@ func TestInitQuestPreservesCompletedFilesByDefault(t *testing.T) {
 					t.Errorf("existing file changed: %s", path)
 				}
 				file := filepath.Base(path)
-				if file != "answer.txt" {
-					file = filepath.Join("input", file)
-				}
 				assertFile(t, path, "existing "+file)
 			}
 		})
@@ -273,8 +268,7 @@ func TestInitQuestForcePreservesNotesWithoutKeys(t *testing.T) {
 	api := setup(t)
 	api.bodies[keysURL] = jsonString(t, map[string]any{"key1": testKey, "key2": nil})
 	for part := 1; part <= 3; part++ {
-		dir := fmt.Sprintf("2024/quest-01/part-%02d/input", part)
-		writeTestFile(t, filepath.Join(dir, "input-encoded.txt"), "old encoded notes")
+		dir := fmt.Sprintf("2024/quest-01/part-%02d", part)
 		writeTestFile(t, filepath.Join(dir, "input.txt"), "old decoded notes")
 	}
 	var output bytes.Buffer
@@ -282,12 +276,12 @@ func TestInitQuestForcePreservesNotesWithoutKeys(t *testing.T) {
 		t.Fatal(err)
 	}
 	for part := 1; part <= 3; part++ {
-		dir := fmt.Sprintf("2024/quest-01/part-%02d/input", part)
-		assertFile(t, filepath.Join(dir, "input-encoded.txt"), testNotes[part-1].encoded)
+		dir := fmt.Sprintf("2024/quest-01/part-%02d", part)
+		assertMissing(t, filepath.Join(dir, "input-encoded.txt"))
 		want := "old decoded notes"
 		if part == 1 {
 			want = testNotes[0].plain
-		} else if !strings.Contains(output.String(), fmt.Sprintf("Part %d: encoded notes saved; key not available yet", part)) {
+		} else if !strings.Contains(output.String(), fmt.Sprintf("Part %d: locked; key not available yet", part)) {
 			t.Errorf("missing unavailable-key message for part %d: %s", part, output.String())
 		}
 		assertFile(t, filepath.Join(dir, "input.txt"), want)
@@ -301,8 +295,7 @@ func TestInitQuestForceHTTPFailuresPreserveCompletedInputs(t *testing.T) {
 			api.statuses[endpoint] = http.StatusServiceUnavailable
 			for part := 1; part <= 3; part++ {
 				dir := fmt.Sprintf("2024/quest-01/part-%02d", part)
-				writeTestFile(t, filepath.Join(dir, "input/input-encoded.txt"), testNotes[part%3].encoded)
-				writeTestFile(t, filepath.Join(dir, "input/input.txt"), "completed input")
+				writeTestFile(t, filepath.Join(dir, "input.txt"), "completed input")
 				writeTestFile(t, filepath.Join(dir, "answer.txt"), "saved answer")
 			}
 			err := run(t.Context(), []string{"get", testURL, "--force"}, io.Discard)
@@ -311,7 +304,7 @@ func TestInitQuestForceHTTPFailuresPreserveCompletedInputs(t *testing.T) {
 			}
 			for part := 1; part <= 3; part++ {
 				dir := fmt.Sprintf("2024/quest-01/part-%02d", part)
-				assertFile(t, filepath.Join(dir, "input/input.txt"), "completed input")
+				assertFile(t, filepath.Join(dir, "input.txt"), "completed input")
 				assertFile(t, filepath.Join(dir, "answer.txt"), "saved answer")
 			}
 		})
@@ -351,7 +344,7 @@ func TestInitQuestFetchesKeysAlongsideSeedAndInputs(t *testing.T) {
 		t.Fatal(err)
 	}
 	for part := 1; part <= 3; part++ {
-		assertFile(t, fmt.Sprintf("2024/quest-01/part-%02d/input/input.txt", part), testNotes[part-1].plain)
+		assertFile(t, fmt.Sprintf("2024/quest-01/part-%02d/input.txt", part), testNotes[part-1].plain)
 	}
 }
 
@@ -409,116 +402,108 @@ func TestInitQuestUnlocksPartsOnRerun(t *testing.T) {
 		t.Fatal(err)
 	}
 	for part := 2; part <= 3; part++ {
-		dir := fmt.Sprintf("2024/quest-01/part-%02d/input", part)
-		assertFile(t, filepath.Join(dir, "input-encoded.txt"), testNotes[part-1].encoded)
-		assertMissing(t, filepath.Join(dir, "input.txt"))
+		dir := fmt.Sprintf("2024/quest-01/part-%02d", part)
+		entries, err := os.ReadDir(dir)
+		if err != nil || len(entries) != 0 {
+			t.Fatalf("locked part directory entries = %v, error = %v; want empty", entries, err)
+		}
 	}
-	writeTestFile(t, "2024/quest-01/part-01/input/input.txt", "keep my existing notes")
+	writeTestFile(t, "2024/quest-01/part-01/input.txt", "keep my existing notes")
 	// Completed parts are skipped even if their remote input and key are unusable.
 	api.bodies[inputsURL] = jsonString(t, map[string]string{"2": testNotes[1].encoded, "3": testNotes[2].encoded})
 	api.bodies[keysURL] = jsonString(t, map[string]any{"key1": 42, "key2": testKey, "key3": testKey})
 	api.calls = nil
-	delete(api.bodies, userURL)
-	delete(api.bodies, inputsURL)
 	if err := run(context.Background(), []string{"get", testURL}, io.Discard); err != nil {
 		t.Fatal(err)
 	}
-	if !slices.Equal(api.calls, []string{keysURL}) {
-		t.Errorf("requests = %v, want only quest keys", api.calls)
-	}
-	assertFile(t, "2024/quest-01/part-01/input/input.txt", "keep my existing notes")
-	assertFile(t, "2024/quest-01/part-01/input/input-encoded.txt", testNotes[0].encoded)
-	for part := 2; part <= 3; part++ {
-		assertFile(t, fmt.Sprintf("2024/quest-01/part-%02d/input/input.txt", part), testNotes[part-1].plain)
-	}
-}
-
-func TestInitQuestFetchesOnlyMissingEncodedNotes(t *testing.T) {
-	api := setup(t)
-	// Only part 2 is missing ciphertext. Its response need not include cached
-	// part 1 or the completed part 3, and existing cache content stays intact.
-	cachePath := "2024/quest-01/part-01/input/input-encoded.txt"
-	writeTestFile(t, cachePath, testNotes[0].encoded+"\n")
-	writeTestFile(t, "2024/quest-01/part-03/input/input.txt", "existing notes")
-	api.bodies[inputsURL] = jsonString(t, map[string]string{"2": testNotes[1].encoded})
-	if err := run(context.Background(), []string{"get", testURL}, io.Discard); err != nil {
-		t.Fatal(err)
-	}
-	assertFile(t, cachePath, testNotes[0].encoded+"\n")
-	assertFile(t, "2024/quest-01/part-01/input/input.txt", testNotes[0].plain)
-	assertFile(t, "2024/quest-01/part-02/input/input-encoded.txt", testNotes[1].encoded)
-	assertFile(t, "2024/quest-01/part-02/input/input.txt", testNotes[1].plain)
-	assertFile(t, "2024/quest-01/part-03/input/input.txt", "existing notes")
 	wantCalls := []string{userURL, inputsURL, keysURL}
 	slices.Sort(api.calls)
 	slices.Sort(wantCalls)
 	if !slices.Equal(api.calls, wantCalls) {
 		t.Errorf("requests = %v, want %v", api.calls, wantCalls)
 	}
+	assertFile(t, "2024/quest-01/part-01/input.txt", "keep my existing notes")
+	assertMissing(t, "2024/quest-01/part-01/input-encoded.txt")
+	for part := 2; part <= 3; part++ {
+		assertFile(t, fmt.Sprintf("2024/quest-01/part-%02d/input.txt", part), testNotes[part-1].plain)
+	}
 }
 
-func TestInitQuestRefreshesMalformedCache(t *testing.T) {
+func TestInitQuestWritesOnlyUnlockedInputs(t *testing.T) {
 	for _, tt := range []struct {
-		name, encoded string
+		name, keys, inputs string
+		firstReady         bool
 	}{
-		{"empty", ""},
-		{"whitespace", " \n\t"},
-		{"not hex", "invalid ciphertext"},
-		{"incomplete AES block", "deadbeef"},
-		{"oversized", strings.Repeat("0", maxJSONResponseBytes+1)},
+		{"null and missing keys", jsonString(t, map[string]any{"key1": testKey, "key2": nil}), jsonString(t, map[string]string{"1": testNotes[0].encoded}), true},
+		{"empty keys and malformed locked input", jsonString(t, map[string]string{"key1": testKey, "key2": "", "key3": ""}), jsonString(t, map[string]string{"1": testNotes[0].encoded, "2": "invalid ciphertext"}), true},
+		{"all locked", `{}`, `{}`, false},
 	} {
 		t.Run(tt.name, func(t *testing.T) {
 			api := setup(t)
-			for part := 1; part <= 3; part++ {
-				encoded := testNotes[part-1].encoded
-				if part == 1 {
-					encoded = tt.encoded
-				}
-				writeTestFile(t, fmt.Sprintf("2024/quest-01/part-%02d/input/input-encoded.txt", part), encoded)
-			}
-			api.bodies[inputsURL] = jsonString(t, map[string]string{"1": testNotes[0].encoded})
-			if err := run(context.Background(), []string{"get", testURL}, io.Discard); err != nil {
+			api.bodies[keysURL] = tt.keys
+			api.bodies[inputsURL] = tt.inputs
+			var output bytes.Buffer
+			if err := run(t.Context(), []string{"get", testURL}, &output); err != nil {
 				t.Fatal(err)
 			}
-			assertFile(t, "2024/quest-01/part-01/input/input-encoded.txt", testNotes[0].encoded)
 			for part := 1; part <= 3; part++ {
-				assertFile(t, fmt.Sprintf("2024/quest-01/part-%02d/input/input.txt", part), testNotes[part-1].plain)
+				dir := fmt.Sprintf("2024/quest-01/part-%02d", part)
+				entries, err := os.ReadDir(dir)
+				if err != nil {
+					t.Fatal(err)
+				}
+				if part == 1 && tt.firstReady {
+					if len(entries) != 1 || entries[0].Name() != "input.txt" {
+						t.Fatalf("unlocked part entries = %v; want only input.txt", entries)
+					}
+					assertFile(t, filepath.Join(dir, "input.txt"), testNotes[0].plain)
+				} else {
+					if len(entries) != 0 {
+						t.Fatalf("locked part entries = %v; want empty", entries)
+					}
+					if !strings.Contains(output.String(), fmt.Sprintf("Part %d: locked; key not available yet", part)) {
+						t.Fatalf("missing locked message for part %d: %s", part, output.String())
+					}
+				}
+			}
+			output.Reset()
+			if err := run(t.Context(), []string{"status"}, &output); err != nil {
+				t.Fatal(err)
+			}
+			firstState := "locked"
+			if tt.firstReady {
+				firstState = "ready"
+			}
+			want := fmt.Sprintf("2024\n  quest-01\n    part-01: %s\n    part-02: locked\n    part-03: locked\n", firstState)
+			if output.String() != want {
+				t.Fatalf("status = %q, want %q", output.String(), want)
 			}
 		})
 	}
 }
 
-func TestInitQuestReportsUnreadableCache(t *testing.T) {
-	api := setup(t)
-	// A directory is a portable way to exercise a read failure, including
-	// when tests run as a user who can bypass ordinary file permissions.
-	path := "2024/quest-01/part-01/input/input-encoded.txt"
-	if err := os.MkdirAll(path, 0o755); err != nil {
+func TestInitQuestIgnoresLegacyInputs(t *testing.T) {
+	setup(t)
+	legacy := map[string]string{
+		"2024/quest-01/part-01/input/input-encoded.txt": testNotes[1].encoded,
+		"2024/quest-01/part-01/input/input.txt":         "legacy notes",
+		"2024/quest-01/part-02/input-encoded.txt":       "invalid legacy ciphertext",
+	}
+	for path, content := range legacy {
+		writeTestFile(t, path, content)
+	}
+	if err := os.MkdirAll("2024/quest-01/part-03/input-encoded.txt", 0o755); err != nil {
 		t.Fatal(err)
 	}
-	err := run(context.Background(), []string{"get", testURL}, io.Discard)
-	if err == nil || !strings.Contains(err.Error(), "read encoded notes for part 1") {
-		t.Fatalf("error = %v, want cache read failure", err)
+	if err := run(t.Context(), []string{"get", testURL}, io.Discard); err != nil {
+		t.Fatal(err)
 	}
-	if len(api.calls) != 0 {
-		t.Errorf("unreadable cache caused HTTP requests: %v", api.calls)
+	for path, content := range legacy {
+		assertFile(t, path, content)
 	}
-}
-
-func TestInitQuestCachedInputsStillRequireKeys(t *testing.T) {
-	api := setup(t)
 	for part := 1; part <= 3; part++ {
-		writeTestFile(t, fmt.Sprintf("2024/quest-01/part-%02d/input/input-encoded.txt", part), testNotes[part-1].encoded)
+		assertFile(t, fmt.Sprintf("2024/quest-01/part-%02d/input.txt", part), testNotes[part-1].plain)
 	}
-	api.statuses[keysURL] = http.StatusUnauthorized
-	err := run(context.Background(), []string{"get", testURL}, io.Discard)
-	if err == nil || !strings.Contains(err.Error(), "get quest keys") || !strings.Contains(err.Error(), "HTTP 401") {
-		t.Fatalf("error = %v, want quest keys HTTP 401", err)
-	}
-	if !slices.Equal(api.calls, []string{keysURL}) {
-		t.Errorf("requests = %v, want only quest keys", api.calls)
-	}
-	assertMissing(t, "2024/quest-01/part-01/input/input.txt")
 }
 
 func TestInitQuestTwoDigitNumber(t *testing.T) {
@@ -533,8 +518,8 @@ func TestInitQuestTwoDigitNumber(t *testing.T) {
 		t.Fatal(err)
 	}
 	for part := 1; part <= 3; part++ {
-		dir := fmt.Sprintf("2024/quest-12/part-%02d/input", part)
-		assertFile(t, filepath.Join(dir, "input-encoded.txt"), testNotes[part-1].encoded)
+		dir := fmt.Sprintf("2024/quest-12/part-%02d", part)
+		assertMissing(t, filepath.Join(dir, "input-encoded.txt"))
 		assertFile(t, filepath.Join(dir, "input.txt"), testNotes[part-1].plain)
 	}
 	wantCalls := []string{userURL, inputEndpoint, keyEndpoint}
@@ -568,15 +553,15 @@ func TestInitQuestDirectoryFlag(t *testing.T) {
 				t.Fatal(err)
 			}
 			for part := 1; part <= 3; part++ {
-				dir := filepath.Join(tt.dir, fmt.Sprintf("2024/quest-01/part-%02d/input", part))
-				assertFile(t, filepath.Join(dir, "input-encoded.txt"), testNotes[part-1].encoded)
+				dir := filepath.Join(tt.dir, fmt.Sprintf("2024/quest-01/part-%02d", part))
+				assertMissing(t, filepath.Join(dir, "input-encoded.txt"))
 				assertFile(t, filepath.Join(dir, "input.txt"), testNotes[part-1].plain)
 			}
 			assertMissing(t, "2024")
 			if got, err := os.Getwd(); err != nil || got != cwd {
 				t.Fatalf("working directory changed: got %q (%v), want %q", got, err, cwd)
 			}
-			path := filepath.Join(tt.dir, "2024/quest-01/part-01/input/input.txt")
+			path := filepath.Join(tt.dir, "2024/quest-01/part-01/input.txt")
 			writeTestFile(t, path, "preserve these inputs")
 			api.calls = nil
 			if err := run(context.Background(), append([]string{"get"}, tt.args...), io.Discard); err != nil {
@@ -620,9 +605,8 @@ func TestInitQuestFileConflicts(t *testing.T) {
 		name, path, want string
 		directory        bool
 	}{
-		{"year is a file", "2024", "create input directory", false},
-		{"notes is a directory", "2024/quest-01/part-01/input/input.txt", "must be a regular file", true},
-		{"encoded notes is a directory", "2024/quest-01/part-01/input/input-encoded.txt", "read encoded notes", true},
+		{"year is a file", "2024", "create part directory", false},
+		{"notes is a directory", "2024/quest-01/part-01/input.txt", "must be a regular file", true},
 	} {
 		t.Run(tt.name, func(t *testing.T) {
 			setup(t)
@@ -689,7 +673,7 @@ func TestInitQuestFailures(t *testing.T) {
 			if strings.Contains(err.Error()+output.String(), testSession) {
 				t.Error("session cookie was exposed")
 			}
-			assertMissing(t, "2024/quest-01/part-01/input/input.txt")
+			assertMissing(t, "2024/quest-01/part-01/input.txt")
 		})
 	}
 }
@@ -697,7 +681,7 @@ func TestInitQuestFailures(t *testing.T) {
 func TestInitQuestMissingYearOrQuest(t *testing.T) {
 	for _, q := range []quest{{year: "2099", number: 1}, {year: "2024", number: 999}} {
 		for _, statusCode := range []int{http.StatusNotFound, http.StatusUnprocessableEntity} {
-			for _, failure := range []string{"inputs", "keys", "cached keys", "HTML inputs"} {
+			for _, failure := range []string{"inputs", "keys", "HTML inputs"} {
 				for _, useURL := range []bool{false, true} {
 					name := fmt.Sprintf("%s/%d/%d/%s/url=%t", q.year, q.number, statusCode, failure, useURL)
 					t.Run(name, func(t *testing.T) {
@@ -714,12 +698,6 @@ func TestInitQuestMissingYearOrQuest(t *testing.T) {
 						if failure == "HTML inputs" {
 							api.bodies[inputsEndpoint] = "<!doctype html><html>Not found</html>"
 						}
-						if failure == "cached keys" {
-							for part := 1; part <= 3; part++ {
-								path := fmt.Sprintf("%s/quest-%02d/part-%02d/input/input-encoded.txt", q.year, q.number, part)
-								writeTestFile(t, path, testNotes[part-1].encoded)
-							}
-						}
 						args := []string{"get", "-y", q.year, "-q", fmt.Sprint(q.number)}
 						if useURL {
 							args = []string{"get", fmt.Sprintf("https://everybody.codes/event/%s/quests/%d", q.year, q.number)}
@@ -734,7 +712,7 @@ func TestInitQuestMissingYearOrQuest(t *testing.T) {
 							t.Fatalf("error did not preserve HTTP status %d: %v", statusCode, err)
 						}
 						for part := 1; part <= 3; part++ {
-							assertMissing(t, fmt.Sprintf("%s/quest-%02d/part-%02d/input/input.txt", q.year, q.number, part))
+							assertMissing(t, fmt.Sprintf("%s/quest-%02d/part-%02d/input.txt", q.year, q.number, part))
 						}
 					})
 				}
@@ -827,7 +805,7 @@ func TestSessionCookieFallback(t *testing.T) {
 				if len(api.calls) != 3 {
 					t.Errorf("made %d requests, want 3", len(api.calls))
 				}
-				assertFile(t, "2024/quest-01/part-01/input/input.txt", testNotes[0].plain)
+				assertFile(t, "2024/quest-01/part-01/input.txt", testNotes[0].plain)
 			} else {
 				if err == nil || !strings.Contains(err.Error(), tt.wantErr) {
 					t.Fatalf("error = %v, want %q", err, tt.wantErr)

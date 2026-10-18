@@ -162,8 +162,8 @@ func TestCommandQuestFlags(t *testing.T) {
 				t.Fatal(err)
 			}
 			for part := 1; part <= 3; part++ {
-				dir := fmt.Sprintf("solutions/2024/quest-%02d/part-%02d/input", tt.number, part)
-				assertFile(t, filepath.Join(dir, "input-encoded.txt"), testNotes[part-1].encoded)
+				dir := fmt.Sprintf("solutions/2024/quest-%02d/part-%02d", tt.number, part)
+				assertMissing(t, filepath.Join(dir, "input-encoded.txt"))
 				assertFile(t, filepath.Join(dir, "input.txt"), testNotes[part-1].plain)
 			}
 			wantCalls := []string{userURL, inputsEndpoint, keysEndpoint}
@@ -199,7 +199,7 @@ func TestCommandQuestDefaultsToCurrentYear(t *testing.T) {
 			}
 			for part := 1; part <= 3; part++ {
 				dir := fmt.Sprintf("solutions/%d/quest-01/part-%02d", year, part)
-				assertFile(t, filepath.Join(dir, "input", "input.txt"), testNotes[part-1].plain)
+				assertFile(t, filepath.Join(dir, "input.txt"), testNotes[part-1].plain)
 				assertMissing(t, filepath.Join(dir, "answer.txt"))
 			}
 			wantCalls := []string{userURL, inputsEndpoint, keysEndpoint}
@@ -357,7 +357,7 @@ func TestAuthCommandCancellation(t *testing.T) {
 
 func TestCommandsDoNotShareFlagValues(t *testing.T) {
 	setup(t)
-	writeTestFile(t, "2024/quest-01/part-01/input/input.txt", "decoded")
+	writeTestFile(t, "2024/quest-01/part-01/input.txt", "decoded")
 	var output bytes.Buffer
 	if err := run(t.Context(), []string{"status", "--dir", t.TempDir()}, io.Discard); err != nil {
 		t.Fatal(err)

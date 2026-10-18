@@ -12,7 +12,7 @@ import (
 
 func TestRunStatusWithDirectory(t *testing.T) {
 	base := t.TempDir()
-	statusTestFile(t, base, "2024/quest-01/part-02/input/input.txt", "decoded")
+	statusTestFile(t, base, "2024/quest-01/part-02/input.txt", "decoded")
 	for _, args := range [][]string{
 		{"status", "--dir", base},
 		{"--dir", base, "status"},
@@ -30,17 +30,17 @@ func TestRunStatusWithDirectory(t *testing.T) {
 func TestStatusGroupsEventsAndOrdersQuestsNumerically(t *testing.T) {
 	base := t.TempDir()
 	for path, content := range map[string]string{
-		"2025/quest-01/part-01/input/input.txt":         "",
-		"2024/quest-10/part-01/input/input-encoded.txt": "encoded",
-		"2024/quest-2/part-02/input/input.txt":          "decoded",
-		"2024/quest-01/part-01/input/input-encoded.txt": "encoded",
-		"story-1/quest-01/part-03/input/input.txt":      "decoded",
-		"2024/other/part-01/input/input.txt":            "ignore",
-		"2024/quest-00/part-01/input/input.txt":         "ignore",
-		"2024/quest-03/other/input/input.txt":           "ignore",
-		"2024/quest-04/part-00/input/input.txt":         "ignore",
-		"2024/quest-05":                                 "not a directory",
-		"README.md":                                     "ignore",
+		"2025/quest-01/part-01/input.txt":         "",
+		"2024/quest-10/part-01/input-encoded.txt": "encoded",
+		"2024/quest-2/part-02/input.txt":          "decoded",
+		"2024/quest-01/part-01/input-encoded.txt": "encoded",
+		"story-1/quest-01/part-03/input.txt":      "decoded",
+		"2024/other/part-01/input.txt":            "ignore",
+		"2024/quest-00/part-01/input.txt":         "ignore",
+		"2024/quest-03/other/input.txt":           "ignore",
+		"2024/quest-04/part-00/input.txt":         "ignore",
+		"2024/quest-05":                           "not a directory",
+		"README.md":                               "ignore",
 	} {
 		statusTestFile(t, base, path, content)
 	}
@@ -107,27 +107,35 @@ func TestStatusReportsEachPartIndependently(t *testing.T) {
 		{
 			name: "first part ready and later parts locked",
 			files: []string{
-				"part-01/input/input.txt",
-				"part-02/input/input-encoded.txt",
-				"part-03/input/input-encoded.txt",
+				"part-01/input.txt",
+				"part-02/input-encoded.txt",
+				"part-03/input-encoded.txt",
 			},
 			want: "2024\n  quest-01\n    part-01: ready\n    part-02: locked\n    part-03: locked\n",
 		},
 		{
 			name: "all parts ready",
 			files: []string{
-				"part-01/input/input.txt",
-				"part-02/input/input.txt",
-				"part-03/input/input.txt",
+				"part-01/input.txt",
+				"part-02/input.txt",
+				"part-03/input.txt",
 			},
 			want: "2024\n  quest-01\n    part-01: ready\n    part-02: ready\n    part-03: ready\n",
 		},
 		{
 			name: "all parts have only encoded inputs",
 			files: []string{
-				"part-01/input/input-encoded.txt",
+				"part-01/input-encoded.txt",
+				"part-02/input-encoded.txt",
+				"part-03/input-encoded.txt",
+			},
+			want: "2024\n  quest-01\n    part-01: locked\n    part-02: locked\n    part-03: locked\n",
+		},
+		{
+			name: "legacy input subdirectories do not mark parts ready",
+			files: []string{
+				"part-01/input/input.txt",
 				"part-02/input/input-encoded.txt",
-				"part-03/input/input-encoded.txt",
 			},
 			want: "2024\n  quest-01\n    part-01: locked\n    part-02: locked\n    part-03: locked\n",
 		},
@@ -137,31 +145,31 @@ func TestStatusReportsEachPartIndependently(t *testing.T) {
 		},
 		{
 			name:  "missing first part and third part directories",
-			files: []string{"part-02/input/input.txt"},
+			files: []string{"part-02/input.txt"},
 			want:  "2024\n  quest-01\n    part-01: locked\n    part-02: ready\n    part-03: locked\n",
 		},
 		{
 			name: "ignore noncanonical parts and extra parts",
 			files: []string{
-				"part-1/input/input.txt",
-				"part-2/input/input-encoded.txt",
-				"part-3/input/input.txt",
-				"part-04/input/input.txt",
-				"part-001/input/input.txt",
-				"part-002/input/input.txt",
-				"part-003/input/input.txt",
+				"part-1/input.txt",
+				"part-2/input-encoded.txt",
+				"part-3/input.txt",
+				"part-04/input.txt",
+				"part-001/input.txt",
+				"part-002/input.txt",
+				"part-003/input.txt",
 			},
 			want: "2024\n  quest-01\n    part-01: locked\n    part-02: locked\n    part-03: locked\n",
 		},
 		{
 			name: "canonical parts determine readiness alongside noncanonical parts",
 			files: []string{
-				"part-01/input/input-encoded.txt",
-				"part-02/input/input.txt",
-				"part-03/input/input-encoded.txt",
-				"part-1/input/input.txt",
-				"part-2/input/input-encoded.txt",
-				"part-003/input/input.txt",
+				"part-01/input-encoded.txt",
+				"part-02/input.txt",
+				"part-03/input-encoded.txt",
+				"part-1/input.txt",
+				"part-2/input-encoded.txt",
+				"part-003/input.txt",
 			},
 			want: "2024\n  quest-01\n    part-01: locked\n    part-02: ready\n    part-03: locked\n",
 		},
@@ -188,7 +196,7 @@ func TestStatusReportsEachPartIndependently(t *testing.T) {
 
 func TestStatusDirectoryNamedInputIsLocked(t *testing.T) {
 	base := t.TempDir()
-	if err := os.MkdirAll(filepath.Join(base, "2024/quest-01/part-01/input/input.txt"), 0o755); err != nil {
+	if err := os.MkdirAll(filepath.Join(base, "2024/quest-01/part-01/input.txt"), 0o755); err != nil {
 		t.Fatal(err)
 	}
 	var output bytes.Buffer
@@ -202,8 +210,8 @@ func TestStatusDirectoryNamedInputIsLocked(t *testing.T) {
 
 func TestStatusAllowsInternalLinks(t *testing.T) {
 	base := t.TempDir()
-	statusTestFile(t, base, "2024/quest-01/part-01/input/notes.txt", "decoded")
-	if err := os.Symlink("notes.txt", filepath.Join(base, "2024/quest-01/part-01/input/input.txt")); err != nil {
+	statusTestFile(t, base, "2024/quest-01/part-01/notes.txt", "decoded")
+	if err := os.Symlink("notes.txt", filepath.Join(base, "2024/quest-01/part-01/input.txt")); err != nil {
 		t.Fatal(err)
 	}
 	if err := os.Symlink("quest-01", filepath.Join(base, "2024/quest-02")); err != nil {
@@ -233,8 +241,7 @@ func TestStatusRejectsLinksOutsideBaseDirectory(t *testing.T) {
 		"2024",
 		"2024/quest-01",
 		"2024/quest-01/part-01",
-		"2024/quest-01/part-01/input",
-		"2024/quest-01/part-01/input/input.txt",
+		"2024/quest-01/part-01/input.txt",
 	} {
 		t.Run(path, func(t *testing.T) {
 			base := t.TempDir()
@@ -278,7 +285,7 @@ func (w statusErrorWriter) Write([]byte) (int, error) { return 0, w.err }
 
 func TestStatusPropagatesOutputError(t *testing.T) {
 	base := t.TempDir()
-	statusTestFile(t, base, "2024/quest-01/part-01/input/input.txt", "decoded")
+	statusTestFile(t, base, "2024/quest-01/part-01/input.txt", "decoded")
 	want := errors.New("output unavailable")
 	if err := runStatus(base, statusErrorWriter{want}); !errors.Is(err, want) {
 		t.Fatalf("error = %v, want %v", err, want)
