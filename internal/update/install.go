@@ -6,6 +6,18 @@ import (
 	"path/filepath"
 )
 
+// Cask binaries stay in <prefix>/Caskroom/ec/<version> and are linked into bin.
+// Resolve symlinks so this also works through custom prefixes and user links.
+func homebrewExecutable(target string) bool {
+	resolved, err := filepath.EvalSymlinks(target)
+	if err != nil {
+		return false
+	}
+	cask := filepath.Dir(filepath.Dir(resolved))
+	return filepath.Base(resolved) == "ec" && filepath.Base(cask) == "ec" &&
+		filepath.Base(filepath.Dir(cask)) == "Caskroom"
+}
+
 func replaceExecutable(target string, binary []byte) error {
 	target, err := filepath.EvalSymlinks(target)
 	if err != nil {

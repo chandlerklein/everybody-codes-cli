@@ -3,14 +3,14 @@ version: 2
 project_name: ec
 
 builds:
-  - main: ./cmd/ec
+  - &build
+    id: macos
+    main: ./cmd/ec
     binary: ec
     env:
       - CGO_ENABLED=0
     goos:
       - darwin
-      - linux
-      - windows
     goarch:
       - amd64
       - arm64
@@ -18,15 +18,26 @@ builds:
       - -trimpath
     ldflags:
       - -s -w -X main.version=v{{ .Version }}
+  - <<: *build
+    id: other
+    goos:
+      - linux
+      - windows
 
 archives:
-  - name_template: "{{ .ProjectName }}_{{ .Version }}_{{ .Os }}_{{ .Arch }}"
+  - &archive
+    id: macos
+    ids: [macos]
+    name_template: "{{ .ProjectName }}_{{ .Version }}_{{ .Os }}_{{ .Arch }}"
     formats:
       - tar.gz
     format_overrides:
       - goos: windows
         formats:
           - zip
+  - <<: *archive
+    id: other
+    ids: [other]
 
 checksum:
   name_template: checksums.txt
@@ -34,3 +45,25 @@ checksum:
 
 release:
   prerelease: auto
+
+homebrew_casks:
+  - name: ec
+    ids: [macos]
+    binaries:
+      - ec
+    homepage: https://github.com/chandlerklein/everybody-codes-cli
+    description: Download Everybody Codes quest inputs and submit answers
+    skip_upload: auto
+    # Release binaries are not signed with an Apple Developer certificate.
+    # Use the structured Homebrew hook; GoReleaser's hook emits legacy Ruby.
+    custom_block: |
+      postflight_steps do
+        run "/usr/bin/xattr", args: ["-dr", "com.apple.quarantine", "{{ "{{staged_path}}" }}/ec"]
+      end
+    repository:
+      owner: chandlerklein
+      name: homebrew-tap
+      branch: main
+      git:
+        url: ssh://git@github.com/chandlerklein/homebrew-tap.git
+        private_key: "{{ .Env.HOMEBREW_TAP_KEY }}"

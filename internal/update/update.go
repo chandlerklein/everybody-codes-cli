@@ -66,6 +66,13 @@ func (u updater) run(ctx context.Context, current string, output io.Writer) erro
 	if !semver.IsValid(current) {
 		return fmt.Errorf("cannot update a development build (%s); install a published release from %s/releases/latest", current, updateRepository)
 	}
+	target, err := u.executable()
+	if err != nil {
+		return fmt.Errorf("locate ec executable: %w", err)
+	}
+	if u.goos == "darwin" && homebrewExecutable(target) {
+		return fmt.Errorf("ec is managed by Homebrew; run `brew update && brew upgrade --cask chandlerklein/tap/ec`")
+	}
 	metadata, err := u.download(ctx, latestReleaseURL, maxUpdateMetadata)
 	if err != nil {
 		return fmt.Errorf("check latest release: %w", err)
@@ -121,10 +128,6 @@ func (u updater) run(ctx context.Context, current string, output io.Writer) erro
 	}
 	if err := ctx.Err(); err != nil {
 		return err
-	}
-	target, err := u.executable()
-	if err != nil {
-		return fmt.Errorf("locate ec executable: %w", err)
 	}
 	if err := replaceExecutable(target, binary); err != nil {
 		return fmt.Errorf("install update: %w", err)

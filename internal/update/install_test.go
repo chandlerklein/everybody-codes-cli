@@ -11,6 +11,45 @@ import (
 	"testing"
 )
 
+func TestUpdateHomebrewExecutableDetection(t *testing.T) {
+	for _, tt := range []struct {
+		path string
+		want bool
+	}{
+		{"custom-prefix/Caskroom/ec/0.1.0/ec", true},
+		{"bin/ec", false},
+		{"Caskroom/other/0.1.0/ec", false},
+		{"Caskroom/ec/0.1.0/other", false},
+		{"ec/0.1.0/ec", false},
+	} {
+		t.Run(tt.path, func(t *testing.T) {
+			target := filepath.Join(t.TempDir(), filepath.FromSlash(tt.path))
+			if err := os.MkdirAll(filepath.Dir(target), 0o755); err != nil {
+				t.Fatal(err)
+			}
+			if err := os.WriteFile(target, []byte("executable"), 0o755); err != nil {
+				t.Fatal(err)
+			}
+			if got := homebrewExecutable(target); got != tt.want {
+				t.Fatalf("homebrewExecutable = %v, want %v", got, tt.want)
+			}
+			if runtime.GOOS == "windows" {
+				return // Creating symlinks requires elevated privileges on Windows.
+			}
+			link := filepath.Join(t.TempDir(), "ec")
+			if err := os.Symlink(target, link); err != nil {
+				t.Fatal(err)
+			}
+			if got := homebrewExecutable(link); got != tt.want {
+				t.Fatalf("homebrewExecutable through symlink = %v, want %v", got, tt.want)
+			}
+		})
+	}
+	if homebrewExecutable(filepath.Join(t.TempDir(), "missing")) {
+		t.Fatal("missing executable detected as Homebrew")
+	}
+}
+
 func TestReplaceExecutableThroughSymlink(t *testing.T) {
 	if runtime.GOOS == "windows" {
 		t.Skip("Windows symlink creation requires elevated privileges")
