@@ -1,4 +1,4 @@
-package main
+package cli
 
 import (
 	"bytes"
@@ -71,7 +71,7 @@ func setupSubmission(t *testing.T, status int, body string) *submissionRequest {
 }
 
 func executeSubmit(ctx context.Context, args []string, input io.Reader, output io.Writer) error {
-	cmd := newRootCommand()
+	cmd := newRootCommand("dev")
 	cmd.SetArgs(append([]string{"submit"}, args...))
 	cmd.SetIn(input)
 	cmd.SetOut(output)

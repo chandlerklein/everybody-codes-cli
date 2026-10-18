@@ -115,6 +115,8 @@ Your cookie is saved in `~/.config/everybody-codes/session`. For scripts, you ca
 
 ## Development
 
+`cmd/ec` contains the entry point. `internal/cli` contains the commands, supporting code, and their tests.
+
 Build and test from a checkout:
 
 ```sh
