@@ -21,6 +21,7 @@ func TestCommandHelp(t *testing.T) {
 	}{
 		{[]string{"--help"}, "ec [command]"},
 		{[]string{"-h"}, "ec [command]"},
+		{[]string{"get"}, "ec get [<quest-url> | --event <event> --quest <quest>]"},
 		{[]string{"get", "--help"}, "ec get [<quest-url> | --event <event> --quest <quest>]"},
 		{[]string{"get", "--dir", "elsewhere", "--help"}, "ec get [<quest-url>"},
 		{[]string{"get", testURL, "-h"}, "ec get [<quest-url>"},
@@ -225,7 +226,6 @@ func TestCommandRejectsInvalidArgumentsWithoutSideEffects(t *testing.T) {
 		{"-e", "2024", "-q", "1"},
 		{"--event", "2024", "--quest", "1"},
 		{"--dir", "elsewhere"},
-		{"get"},
 		{"get", testURL, "extra"},
 		{"get", "auth"},
 		{"unknown", testURL},
@@ -333,4 +333,27 @@ func TestRunWithoutArgumentsShowsHelp(t *testing.T) {
 			t.Fatalf("output = %q, want help %q", output.String(), help.String())
 		}
 	}
+}
+
+func TestGetWithoutArgumentsShowsHelpWithoutSideEffects(t *testing.T) {
+	api := setup(t)
+	sessionPath := filepath.Join(os.Getenv("HOME"), ".config", "everybody-codes", "session")
+	if err := os.Remove(sessionPath); err != nil {
+		t.Fatal(err)
+	}
+	var help, output bytes.Buffer
+	if err := run(t.Context(), []string{"get", "--help"}, &help); err != nil {
+		t.Fatal(err)
+	}
+	if err := run(t.Context(), []string{"get"}, &output); err != nil {
+		t.Fatal(err)
+	}
+	if output.String() != help.String() {
+		t.Fatalf("output = %q, want help %q", output.String(), help.String())
+	}
+	if len(api.calls) != 0 {
+		t.Fatal("get help made HTTP requests")
+	}
+	assertMissing(t, "2024")
+	assertMissing(t, sessionPath)
 }
