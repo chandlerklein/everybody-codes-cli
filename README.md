@@ -1,171 +1,105 @@
 # Everybody Codes CLI
 
-`ec` downloads and decrypts your [Everybody Codes](https://everybody.codes/) quest inputs, organizing them into a directory for each event, quest, and part.
+`ec` downloads and decrypts your [Everybody Codes](https://everybody.codes/) quest inputs into event, quest, and part directories. It also saves your session cookie and reports local input readiness.
 
 ## Install
 
-### Prebuilt binaries
+### With Go
 
-Download an archive for your system from [GitHub Releases](https://github.com/chandlerklein/everybody-codes-cli/releases/latest). No Go installation is required.
-
-| System | Intel/AMD 64-bit (`amd64`) | ARM64 (`arm64`) |
-| --- | --- | --- |
-| macOS | `ec_<version>_darwin_amd64.tar.gz` | `ec_<version>_darwin_arm64.tar.gz` (Apple silicon) |
-| Linux | `ec_<version>_linux_amd64.tar.gz` | `ec_<version>_linux_arm64.tar.gz` |
-| Windows | `ec_<version>_windows_amd64.zip` | `ec_<version>_windows_arm64.zip` |
-
-Archive filenames use the version without the `v` prefix, such as `ec_0.1.0_linux_amd64.tar.gz`. Download `checksums.txt` from the same release to verify the archive's SHA-256 hash before extracting it.
-
-For example, for Linux on Intel/AMD, run from the download directory:
+Requires Go 1.26 or newer. Install the current `main` branch directly from GitHub:
 
 ```sh
-sha256sum --ignore-missing -c checksums.txt
-tar -xzf ec_0.1.0_linux_amd64.tar.gz
-mkdir -p "$HOME/.local/bin"
-install -m 755 ec "$HOME/.local/bin/ec"
+GOPROXY=direct go install github.com/chandlerklein/everybody-codes-cli/cmd/ec@main
 ```
 
-Use the filename for your downloaded version. On macOS, verify with `shasum -a 256 ec_0.1.0_darwin_arm64.tar.gz` (or the `amd64` archive) and compare the result with its entry in `checksums.txt`, then extract and install as above. Make sure `~/.local/bin` is on your `PATH`.
+Add `GOBIN` to your `PATH`, or `$(go env GOPATH)/bin` if `GOBIN` is unset (usually `~/go/bin`). Check the installation with `ec --version`.
 
-On Windows, use PowerShell's `Get-FileHash .\ec_0.1.0_windows_amd64.zip -Algorithm SHA256` (or the `arm64` archive), compare it with `checksums.txt`, and extract the ZIP. Move `ec.exe` into a directory on your `PATH`.
+### Release binaries
 
-After installing:
+When published, [GitHub Releases](https://github.com/chandlerklein/everybody-codes-cli/releases) provide binaries that do not require Go:
 
-```sh
-ec --version
-```
+| System  | Intel/AMD 64-bit                   | ARM64                              |
+| ------- | ---------------------------------- | ---------------------------------- |
+| macOS   | `ec_<version>_darwin_amd64.tar.gz` | `ec_<version>_darwin_arm64.tar.gz` |
+| Linux   | `ec_<version>_linux_amd64.tar.gz`  | `ec_<version>_linux_arm64.tar.gz`  |
+| Windows | `ec_<version>_windows_amd64.zip`   | `ec_<version>_windows_arm64.zip`   |
 
-### Install with Go
+`<version>` omits the tag's `v` prefix. Download the matching archive and `checksums.txt` from the same release, verify its SHA-256 hash, then extract `ec` (`ec.exe` on Windows) into a directory on your `PATH`.
 
-Requires Go 1.26 or newer.
+On Linux, verify with `sha256sum --ignore-missing -c checksums.txt`. On macOS, use `shasum -a 256 <archive>`; on Windows, use `Get-FileHash <archive> -Algorithm SHA256`. Compare the latter two results with the archive's entry in `checksums.txt`.
 
-```sh
-go install github.com/chandlerklein/everybody-codes-cli/cmd/ec@latest
-```
+## Authenticate
 
-To install a specific published version:
-
-```sh
-go install github.com/chandlerklein/everybody-codes-cli/cmd/ec@v0.1.0
-```
-
-This installs `ec` into `GOBIN`, or `$(go env GOPATH)/bin` if `GOBIN` is unset (usually `~/go/bin`). Make sure that directory is on your `PATH`.
-
-`ec --version` reports the installed version for both release downloads and versioned Go installs. Local builds use Go's embedded module version when available and otherwise report `dev`.
-
-## Set up your session
-
-Sign in to Everybody Codes, then copy your session cookie value from the profile settings page.
-
-Run:
+Sign in to Everybody Codes and copy your session cookie value from your profile settings. Run:
 
 ```sh
 ec auth
 ```
 
-Paste the raw cookie value at the prompt, without quotes or the `everybody-codes=` prefix. Input is hidden when using a terminal. The command saves it to `~/.config/everybody-codes/session` with permissions `0600`. It accepts no cookie argument or configuration flags.
-
-To verify your session:
+Paste the raw value without quotes or the `everybody-codes=` prefix. Terminal input is hidden. The command saves the cookie to `~/.config/everybody-codes/session` with permissions `0600`; it does not verify it. To verify:
 
 ```sh
 ec auth check
 ```
 
-This checks the authenticated user endpoint without downloading inputs or creating quest directories. If authentication fails, run `ec auth` again to replace the cookie.
+This checks your session without downloading inputs or creating quest directories. For an expired or invalid session, run `ec auth` again. Neither command accepts a cookie argument or a configuration flag.
 
-You can also create `~/.config/everybody-codes/` and save the raw cookie value in a file named `session` inside it. A trailing newline is fine. Restrict access to the file:
-
-```sh
-chmod 600 ~/.config/everybody-codes/session
-```
-
-Alternatively, set an environment variable:
+You can instead create the session file manually (restrict it with `chmod 600 ~/.config/everybody-codes/session`) or set:
 
 ```sh
 export EVERYBODY_CODES_SESSION_COOKIE='your-cookie-value'
 ```
 
-In Fish:
+For Fish, use `set -gx EVERYBODY_CODES_SESSION_COOKIE 'your-cookie-value'`.
 
-```fish
-set -gx EVERYBODY_CODES_SESSION_COOKIE 'your-cookie-value'
-```
+The session file takes precedence; a missing, empty, or whitespace-only file falls back to the environment variable. Surrounding whitespace is trimmed. An unreadable or invalid nonempty file produces an error. Cookie values are not logged.
 
-The session file takes precedence. If it is missing, empty, or contains only whitespace, `ec` uses the environment variable. If neither has a value, `ec` reports an error. The cookie value is never logged.
-
-## Download quest inputs
+## Download inputs
 
 > [!CAUTION]
-> Do not commit quest inputs or descriptions to your code repository. Get permission before reusing or sharing this content. Add the following to your repository's `.gitignore` to exclude all generated input directories:
->
-> ```gitignore
-> **/input/
-> ```
+> Do not commit quest inputs or descriptions. Get permission before reusing or sharing them. Add `**/input/` to your repository's `.gitignore` to exclude generated input directories.
 
-Run from the directory where you keep your quest solutions:
+Run from your solutions directory using a quest URL or both event and quest flags:
 
 ```sh
 ec get https://everybody.codes/event/2024/quests/1
-```
-
-Or specify the event and quest directly:
-
-```sh
 ec get -e 2024 -q 1
 ec get --event 2024 --quest 01
 ```
 
-Both forms download the same inputs as the URL above. `-e` is short for `--event`, and `-q` is short for `--quest`. Supply both flags together, without a quest URL. Quest numbers are decimal and may have leading zeros, so `01` means quest 1 and `08` means quest 8. Both forms also support `--dir`.
+These commands select the same quest. `-e` and `-q` are aliases for `--event` and `--quest`; do not combine them with a URL. Quest numbers are positive decimal integers, so `01` means 1 and `08` means 8.
 
-If the server reports a missing event or quest, `ec` exits with an error identifying the requested event and quest. The server does not distinguish missing events from missing quests; inputs that are not available yet can produce the same response.
-
-This creates:
+Each command creates:
 
 ```text
-2024/
-└── quest-01/
-    ├── part-01/input/
-    ├── part-02/input/
-    └── part-03/input/
+2024/quest-01/
+├── part-01/input/
+├── part-02/input/
+└── part-03/input/
 ```
 
-Each part's `input/` directory receives:
+Each part gets `input-encoded.txt` with the encrypted input, plus `input.txt` when its decryption key is available. Quest numbers are padded to at least two digits.
 
-| File | Contents |
-| --- | --- |
-| `input-encoded.txt` | Encrypted quest input. |
-| `input.txt` | Decrypted quest input, saved when the part's key is available. |
-
-Quest numbers are padded to at least two digits: quest 1 uses `quest-01`, and quest 12 uses `quest-12`.
-
-Run the same command again after unlocking another part to download and decrypt its input. Existing directories are reused, and parts that already have `input.txt` are skipped. Once all three parts have `input.txt`, the command finishes without making HTTP requests or requiring a session cookie.
-
-For pending parts, saved encrypted inputs are reused. If all pending parts have usable `input-encoded.txt` files, a rerun requests only the quest keys. Missing or malformed encrypted inputs are downloaded again.
-
-Inputs are specific to your account. Use separate output directories for different accounts; changing the session cookie does not replace cached inputs or existing decoded files.
-
-### Choose an output directory
-
-To create the quest under a different directory, use `--dir`:
+Both forms accept `--dir` before or after the quest arguments:
 
 ```sh
 ec get https://everybody.codes/event/2024/quests/1 --dir ~/projects/everybody-codes
 ```
 
-This creates `~/projects/everybody-codes/2024/quest-01/`. The flag accepts absolute or relative paths and can appear before or after the URL. Missing directories are created automatically. Without `--dir`, the current directory is used.
+This writes under `~/projects/everybody-codes/2024/quest-01/`. The default is the current directory. Relative and absolute paths are supported; missing directories are created.
 
-Run `ec` by itself or use `ec --help` to see the available commands. Use `ec get --help` for download syntax. Each command also has its own help, such as `ec auth --help`, `ec auth check --help`, and `ec status --help`.
+Rerun after unlocking another part. Existing `input.txt` files are preserved and skipped. Pending parts reuse usable encrypted files and request fresh keys; missing or malformed encrypted files are downloaded again. When all three decoded files exist, no session or HTTP requests are needed.
 
-## Show local quest status
+Inputs are account-specific: use separate output directories for different accounts. Changing the session does not replace cached or decoded files. If the server reports an unavailable quest, the error identifies the event and quest; the server may use the same response for missing events, missing quests, and inputs not yet available.
 
-Run from the directory containing your event folders:
+## Show local status
+
+Run from the directory containing your event folders, or pass `--dir`:
 
 ```sh
 ec status
 ec status --dir ~/projects/everybody-codes
 ```
-
-Parts are grouped by event and then quest. All three parts are listed for each local quest:
 
 ```text
 2024
@@ -175,25 +109,28 @@ Parts are grouped by event and then quest. All three parts are listed for each l
     part-03: locked
 ```
 
-Each part is `ready` when its decoded `input.txt` file exists, or `locked` when it does not. Missing part directories are also shown as locked. Status uses local files only and does not indicate whether a part has been solved or whether more parts are available remotely.
+Each local quest lists all three parts. A part is `ready` if `input/input.txt` is a regular file; otherwise it is `locked`, including missing part directories. Status uses local files only and does not track solved parts or remote availability. An empty directory reports `No local quests found.`; a missing base directory is an error.
+
+## Help and shell completion
+
+Run `ec` or `ec --help` for available commands. Each command supports `--help`, including `ec get --help`, `ec auth check --help`, and `ec status --help`.
+
+Use `ec completion --help` for Bash, Zsh, Fish, and PowerShell completion setup, then `ec completion <shell> --help` for installation instructions.
 
 ## Development
 
-From a local checkout, build the binary:
+Build and test from a checkout:
 
 ```sh
 go build -o ec ./cmd/ec
-```
-
-Run the tests:
-
-```sh
 go test ./...
 ```
 
+`ec --version` reports the release tag for release binaries and the embedded module version for versioned Go installs. Local builds otherwise report `dev`.
+
 ### Releases
 
-After merging the release changes to `main`, create and push a version tag on the commit to release:
+After merging changes to `main`, tag the commit to release with a new version:
 
 ```sh
 git switch main
@@ -202,13 +139,13 @@ git tag v0.1.0
 git push origin v0.1.0
 ```
 
-Use a new version for each release. The [release workflow](.github/workflows/release.yml) runs tests first, then uses [GoReleaser](https://goreleaser.com/getting-started/quick-start/) to build `./cmd/ec` for macOS, Linux, and Windows on `amd64` and `arm64`. It publishes six archives and `checksums.txt` to GitHub Releases using the workflow's built-in `GITHUB_TOKEN`. Tags with a prerelease suffix, such as `v0.2.0-rc.1`, create GitHub prereleases.
+The [release workflow](.github/workflows/release.yml) runs tests, then uses [GoReleaser](https://goreleaser.com/) to publish the six archives above and `checksums.txt`. Tags such as `v0.2.0-rc.1` create prereleases.
 
-With GoReleaser v2 installed, validate the configuration and build the release archives locally without publishing:
+With GoReleaser v2 installed, validate and build locally without publishing:
 
 ```sh
 goreleaser check
 goreleaser release --snapshot --clean
 ```
 
-Generated binaries, archives, and checksums are written to the ignored `dist/` directory.
+Artifacts go to the ignored `dist/` directory.
