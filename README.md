@@ -117,7 +117,7 @@ Answers are UTF-8 text, including numeric answers. Quote answers containing spac
 
 `submit` uses the same saved session or environment variable as `get`. It posts `{"answer":"<ANSWER>"}` to `https://api.everybody.codes/event/<YEAR>/quest/<QUEST>/part/<PART>/answer`. It does not require local quest files or create any files.
 
-For a 2xx response, the command prints the HTTP status and response body. Other responses exit with an error containing the HTTP status and response body, including unknown statuses. HTTP 409 Conflict reports that the part is already solved. Requests are not retried automatically; the API's response body provides the result of the submission.
+For a 2xx response, the command prints the HTTP status and response body. When the API confirms `"correct": true`, it also prints a congratulations message identifying the year, quest, and part. Other responses exit with an error containing the HTTP status and response body, including unknown statuses. HTTP 409 Conflict reports that the part is already solved. Requests are not retried automatically; the API's response body provides the result of the submission.
 
 ## Show local status
 

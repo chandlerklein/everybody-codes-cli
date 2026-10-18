@@ -145,7 +145,15 @@ func submitAnswer(ctx context.Context, q quest, part int, answer string, output 
 		if !strings.HasSuffix(text, "\n") {
 			text += "\n"
 		}
-		_, err = io.WriteString(output, text)
+		if _, err := io.WriteString(output, text); err != nil {
+			return err
+		}
+	}
+	var result struct {
+		Correct bool `json:"correct"`
+	}
+	if json.Unmarshal(body, &result) == nil && result.Correct {
+		_, err = fmt.Fprintf(output, "Congratulations! You solved part %d of quest %d (%s).\n", part, q.number, q.year)
 	}
 	return err
 }

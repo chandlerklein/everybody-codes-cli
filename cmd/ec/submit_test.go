@@ -107,7 +107,8 @@ func TestSubmitArgumentsAndInput(t *testing.T) {
 			if request.calls != 1 || request.url != wantURL || request.answer != tt.answer {
 				t.Fatalf("calls = %d, URL = %s, answer matches = %t", request.calls, request.url, request.answer == tt.answer)
 			}
-			if got, want := output.String(), "HTTP 200 OK\n{\"correct\":true}\n"; got != want {
+			wantOutput := fmt.Sprintf("HTTP 200 OK\n{\"correct\":true}\nCongratulations! You solved part %d of quest %d (%s).\n", tt.part, tt.quest, tt.year)
+			if got, want := output.String(), wantOutput; got != want {
 				t.Fatalf("output = %q, want %q", got, want)
 			}
 			entries, err := os.ReadDir(".")
@@ -215,6 +216,39 @@ func TestSubmitHTTPResponses(t *testing.T) {
 			}
 			if tt.status == 409 && !strings.Contains(err.Error(), "already solved") {
 				t.Fatalf("missing already-solved explanation: %v", err)
+			}
+		})
+	}
+}
+
+func TestSubmitCongratulationsRequiresConfirmedCorrectAnswer(t *testing.T) {
+	for _, tt := range []struct {
+		name   string
+		status int
+		body   string
+		want   bool
+	}{
+		{"confirmed success", 200, `{"correct":true,"globalTime":61546407550,"globalPlace":3628,"globalScore":0,"localTime":28961483188}`, true},
+		{"another 2xx status", 201, `{"correct":true}`, true},
+		{"incorrect answer", 200, `{"correct":false}`, false},
+		{"missing confirmation", 200, `{"message":"received"}`, false},
+		{"null confirmation", 200, `{"correct":null}`, false},
+		{"string confirmation", 200, `{"correct":"true"}`, false},
+		{"invalid JSON", 200, `{"correct":true`, false},
+		{"empty response", 204, "", false},
+		{"already solved", 409, `{"message":"already solved"}`, false},
+		{"error with correct field", 500, `{"correct":true}`, false},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			setupSubmission(t, tt.status, tt.body)
+			var output bytes.Buffer
+			err := executeSubmit(t.Context(), []string{"-y2024", "-q1", "-p2", "5560"}, strings.NewReader(""), &output)
+			if (err != nil) != (tt.status >= 300) {
+				t.Fatalf("error = %v, status = %d", err, tt.status)
+			}
+			message := "Congratulations! You solved part 2 of quest 1 (2024).\n"
+			if strings.Contains(output.String(), "Congratulations!") != tt.want || (tt.want && !strings.HasSuffix(output.String(), message)) {
+				t.Fatalf("output = %q, want congratulations = %t", output.String(), tt.want)
 			}
 		})
 	}
