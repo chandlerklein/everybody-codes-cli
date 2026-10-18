@@ -21,8 +21,8 @@ func main() {
 
 func run(ctx context.Context, args []string, output io.Writer) error {
 	cmd := newRootCommand()
-	if args == nil {
-		args = []string{}
+	if len(args) == 0 {
+		args = []string{"--help"}
 	}
 	cmd.SetArgs(args)
 	cmd.SetIn(os.Stdin)
