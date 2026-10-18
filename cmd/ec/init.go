@@ -31,10 +31,23 @@ var apiClient = &http.Client{
 }
 
 var questPath = regexp.MustCompile(`^/event/([A-Za-z0-9][A-Za-z0-9_-]*)/quests/([0-9]+)/?$`)
+var eventID = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9_-]*$`)
+var decimalQuestNumber = regexp.MustCompile(`^[0-9]+$`)
 
 type quest struct {
 	event  string
 	number int
+}
+
+func parseQuestFlags(event, rawNumber string) (quest, error) {
+	if !eventID.MatchString(event) {
+		return quest{}, errors.New("event must be a nonempty identifier containing only letters, digits, hyphens, or underscores, starting with a letter or digit")
+	}
+	number, err := strconv.Atoi(rawNumber)
+	if err != nil || number < 1 || !decimalQuestNumber.MatchString(rawNumber) {
+		return quest{}, errors.New("quest number must be a positive decimal integer (for example, 1 or 01)")
+	}
+	return quest{event: event, number: number}, nil
 }
 
 func parseQuestURL(raw string) (quest, error) {
@@ -156,7 +169,16 @@ func initQuest(ctx context.Context, q quest, baseDir string, output io.Writer) e
 		inputURL := fmt.Sprintf("https://everybody.codes/assets/%s/%d/input/%d.json", q.event, q.number, *user.Seed)
 		var downloaded map[string]string
 		if err := getJSON(ctx, inputURL, cookie, &downloaded); err != nil {
-			return fmt.Errorf("get encoded notes: %w", err)
+			// Missing assets can return an HTML page with HTTP 200. In that
+			// case, use the API's result to identify an unavailable quest.
+			var syntaxErr *json.SyntaxError
+			if errors.As(err, &syntaxErr) {
+				<-keysDone
+				if questUnavailable(keysErr) {
+					return questDownloadError(q, "get quest keys", keysErr)
+				}
+			}
+			return questDownloadError(q, "get encoded notes", err)
 		}
 		for _, part := range missing {
 			encoded, ok := downloaded[strconv.Itoa(part)]
@@ -172,7 +194,7 @@ func initQuest(ctx context.Context, q quest, baseDir string, output io.Writer) e
 	}
 	<-keysDone
 	if keysErr != nil {
-		return fmt.Errorf("get quest keys: %w", keysErr)
+		return questDownloadError(q, "get quest keys", keysErr)
 	}
 	for _, part := range pending {
 		var key string
@@ -201,6 +223,18 @@ func initQuest(ctx context.Context, q quest, baseDir string, output io.Writer) e
 	}
 	_, err = fmt.Fprintf(output, "Initialized %s\n", displayDir)
 	return err
+}
+
+func questDownloadError(q quest, action string, err error) error {
+	if questUnavailable(err) {
+		return fmt.Errorf("%s: event %s or quest %d does not exist or is not available yet: %w", action, q.event, q.number, err)
+	}
+	return fmt.Errorf("%s: %w", action, err)
+}
+
+func questUnavailable(err error) bool {
+	var status *httpStatusError
+	return errors.As(err, &status) && (status.statusCode == http.StatusNotFound || status.statusCode == http.StatusUnprocessableEntity)
 }
 
 func partInputDir(dir string, part int) string {
