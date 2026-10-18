@@ -4,6 +4,17 @@
 
 ## 1. Install
 
+### Homebrew (macOS)
+
+On Apple Silicon and Intel Macs:
+
+```sh
+brew install --cask chandlerklein/tap/ec
+ec --version
+```
+
+### Download a binary
+
 Download an archive from the [latest release](https://github.com/chandlerklein/everybody-codes-cli/releases/latest). No Go installation is needed.
 
 Choose `darwin` for macOS, `linux` for Linux, or `windows` for Windows. Choose `arm64` for Apple Silicon or other ARM64 systems, or `amd64` for Intel/AMD 64-bit systems.
@@ -33,7 +44,14 @@ Add that line to `~/.bashrc` or `~/.zshrc` to keep it for new terminals. If you 
 
 ### Update
 
-Run this whenever you want to install the latest stable release:
+For Homebrew installations:
+
+```sh
+brew update
+brew upgrade --cask chandlerklein/tap/ec
+```
+
+For binary downloads and Go installations, run this to install the latest stable release:
 
 ```sh
 ec update
@@ -155,3 +173,5 @@ go test ./...
 ```
 
 Pushing a version tag such as `v0.1.0` runs the [release workflow](.github/workflows/release.yml) to publish binaries and checksums.
+
+Stable releases also update the macOS cask in [chandlerklein/homebrew-tap](https://github.com/chandlerklein/homebrew-tap). Prereleases leave the cask unchanged. The release workflow uses the `HOMEBREW_TAP_KEY` secret, an SSH deploy key with write access only to the tap repository. To rotate it, add the new public key as a writable deploy key on the tap and save its private key as that Actions secret in this repository.

@@ -55,10 +55,6 @@ func TestUpdateDoesNotDowngradeOrReinstall(t *testing.T) {
 	for _, current := range []string{"v0.2.0", "v0.2.0+build.1", "v0.3.0", "v0.10.0", "v1.0.0-rc.1"} {
 		t.Run(current, func(t *testing.T) {
 			f := setupUpdate(t, "linux", []byte("new executable"))
-			f.u.executable = func() (string, error) {
-				t.Fatal("up-to-date check tried to locate executable")
-				return "", nil
-			}
 			var output bytes.Buffer
 			if err := f.u.run(t.Context(), current, &output); err != nil {
 				t.Fatal(err)
@@ -82,6 +78,29 @@ func TestUpdateUpgradesPrerelease(t *testing.T) {
 	}
 	if output.String() != "Updated ec from v0.2.0-rc.1 to v0.2.0\n" {
 		t.Fatalf("output = %q", output.String())
+	}
+}
+
+func TestUpdateHomebrewInstallation(t *testing.T) {
+	for _, current := range []string{"v0.1.0", testUpdateTag} {
+		t.Run(current, func(t *testing.T) {
+			f := setupUpdate(t, "darwin", []byte("new executable"))
+			f.target = filepath.Join(t.TempDir(), "custom-prefix", "Caskroom", "ec", "0.1.0", "ec")
+			if err := os.MkdirAll(filepath.Dir(f.target), 0o755); err != nil {
+				t.Fatal(err)
+			}
+			if err := os.WriteFile(f.target, []byte("old executable"), 0o755); err != nil {
+				t.Fatal(err)
+			}
+			err := f.u.run(t.Context(), current, io.Discard)
+			if err == nil || !strings.Contains(err.Error(), "brew upgrade --cask chandlerklein/tap/ec") {
+				t.Fatalf("error = %v", err)
+			}
+			if len(f.requests) != 0 {
+				t.Fatalf("Homebrew update made requests: %v", f.requests)
+			}
+			assertFile(t, f.target, "old executable")
+		})
 	}
 }
 
