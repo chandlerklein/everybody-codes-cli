@@ -102,7 +102,7 @@ ec https://everybody.codes/event/2024/quests/1 --dir ~/projects/everybody-codes
 
 This creates `~/projects/everybody-codes/2024/quest-01/`. The flag accepts absolute or relative paths and can appear before or after the URL. Missing directories are created automatically. Without `--dir`, the current directory is used.
 
-Use `ec --help` to see the available commands and download syntax. Each command also has its own help, such as `ec auth --help`, `ec auth check --help`, and `ec status --help`.
+Run `ec` by itself or use `ec --help` to see the available commands and download syntax. Each command also has its own help, such as `ec auth --help`, `ec auth check --help`, and `ec status --help`.
 
 ## Show local quest status
 

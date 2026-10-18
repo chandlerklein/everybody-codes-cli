@@ -45,7 +45,6 @@ func TestCommandHelp(t *testing.T) {
 
 func TestCommandRejectsInvalidArgumentsWithoutSideEffects(t *testing.T) {
 	for _, args := range [][]string{
-		nil,
 		{"unknown", testURL},
 		{testURL, "extra"},
 		{"init", testURL},
@@ -138,9 +137,18 @@ func TestCommandsDoNotShareFlagValues(t *testing.T) {
 	}
 }
 
-func TestRunWithoutArgumentsDoesNotUseProcessArguments(t *testing.T) {
-	err := run(t.Context(), nil, io.Discard)
-	if err == nil || !strings.Contains(err.Error(), "accepts 1 arg(s), received 0") {
-		t.Fatalf("error = %v, want missing quest URL", err)
+func TestRunWithoutArgumentsShowsHelp(t *testing.T) {
+	var help bytes.Buffer
+	if err := run(t.Context(), []string{"--help"}, &help); err != nil {
+		t.Fatal(err)
+	}
+	for _, args := range [][]string{nil, {}} {
+		var output bytes.Buffer
+		if err := run(t.Context(), args, &output); err != nil {
+			t.Fatal(err)
+		}
+		if output.String() != help.String() {
+			t.Fatalf("output = %q, want help %q", output.String(), help.String())
+		}
 	}
 }
