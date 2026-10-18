@@ -1,0 +1,27 @@
+name: Test
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    strategy:
+      matrix:
+        os: [ubuntu-latest, macos-latest, windows-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-go@v7
+        with:
+          go-version-file: go.mod
+      - name: Test updater on every platform
+        run: go test ./... -run 'Test(Update|UnpackUpdate|ReplaceExecutableThroughSymlink|CommitUpdate|CommandHelp)'
+      - name: Test full suite
+        if: runner.os != 'Windows'
+        run: go test ./...
+      - run: go vet ./...

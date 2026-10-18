@@ -119,6 +119,6 @@ func newRootCommand(version string) *cobra.Command {
 		},
 	}
 	status.Flags().StringVar(&statusDir, "dir", ".", "Directory containing local quest inputs")
-	root.AddCommand(auth, get, status, newSubmitCommand())
+	root.AddCommand(auth, get, status, newSubmitCommand(), newUpdateCommand(version))
 	return root
 }

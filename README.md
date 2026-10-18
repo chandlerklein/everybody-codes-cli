@@ -31,6 +31,18 @@ export PATH="$PATH:$(go env GOPATH)/bin"
 
 Add that line to `~/.bashrc` or `~/.zshrc` to keep it for new terminals. If you set a custom `GOBIN`, use that path instead.
 
+### Update
+
+Run this whenever you want to install the latest stable release:
+
+```sh
+ec update
+```
+
+It verifies the download's SHA-256 checksum and replaces your installed executable. It prints `ec is up to date` if you already have the latest version, or `Updated ec from v0.1.0 to v0.2.0` after a successful update. Updates only run when you request them.
+
+The installation directory must be writable. If your version does not recognize `update`, download the latest release or rerun the Go installation command above. Development builds cannot update themselves.
+
 ## 2. Sign in
 
 Sign in on the Everybody Codes website and copy your session cookie value from your profile settings. Then run:
