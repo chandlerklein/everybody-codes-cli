@@ -21,7 +21,7 @@ var (
 type localQuestStatus struct {
 	name   string
 	number int
-	ready  bool
+	parts  [3]bool
 }
 
 type localEventStatus struct {
@@ -51,11 +51,11 @@ func runStatus(baseDir string, output io.Writer) error {
 			if err != nil || number < 1 {
 				continue
 			}
-			ready, err := questIsReady(root, filepath.Join(eventName, questName))
+			parts, err := questPartReadiness(root, filepath.Join(eventName, questName))
 			if err != nil {
 				return err
 			}
-			event.quests = append(event.quests, localQuestStatus{name: questName, number: number, ready: ready})
+			event.quests = append(event.quests, localQuestStatus{name: questName, number: number, parts: parts})
 		}
 		if len(event.quests) == 0 {
 			continue
@@ -74,12 +74,17 @@ func runStatus(baseDir string, output io.Writer) error {
 			return err
 		}
 		for _, quest := range event.quests {
-			state := "locked"
-			if quest.ready {
-				state = "ready"
-			}
-			if _, err := fmt.Fprintf(output, "  %s: %s\n", quest.name, state); err != nil {
+			if _, err := fmt.Fprintf(output, "  %s\n", quest.name); err != nil {
 				return err
+			}
+			for index, ready := range quest.parts {
+				state := "locked"
+				if ready {
+					state = "ready"
+				}
+				if _, err := fmt.Fprintf(output, "    part-%02d: %s\n", index+1, state); err != nil {
+					return err
+				}
 			}
 		}
 	}
@@ -109,15 +114,15 @@ func statusDirectories(root *os.Root, path string, pattern *regexp.Regexp) ([]st
 	return names, nil
 }
 
-func questIsReady(root *os.Root, path string) (bool, error) {
+func questPartReadiness(root *os.Root, path string) ([3]bool, error) {
+	var ready [3]bool
 	parts, err := statusDirectories(root, path, statusPartName)
 	if err != nil {
-		return false, err
+		return ready, err
 	}
-	ready := false
 	for _, part := range parts {
 		number, err := strconv.Atoi(statusPartName.FindStringSubmatch(part)[1])
-		if err != nil || number < 1 {
+		if err != nil || number < 1 || number > len(ready) {
 			continue
 		}
 		inputPath := filepath.Join(path, part, "input", "input.txt")
@@ -126,10 +131,10 @@ func questIsReady(root *os.Root, path string) (bool, error) {
 			continue
 		}
 		if err != nil {
-			return false, fmt.Errorf("check decoded input %s: %w", inputPath, err)
+			return ready, fmt.Errorf("check decoded input %s: %w", inputPath, err)
 		}
 		if info.Mode().IsRegular() {
-			ready = true
+			ready[number-1] = true
 		}
 	}
 	return ready, nil

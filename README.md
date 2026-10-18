@@ -113,23 +113,17 @@ ec status
 ec status --dir ~/projects/everybody-codes
 ```
 
-Quests are grouped by event:
+Parts are grouped by event and then quest. All three parts are listed for each local quest:
 
 ```text
 2024
-  quest-01: ready
-  quest-02: locked
+  quest-01
+    part-01: ready
+    part-02: locked
+    part-03: locked
 ```
 
-`ready` means at least one part has a decoded `input.txt` file. `locked` means no part has a decoded input. Status uses local files only and does not indicate whether a quest has been solved or whether more parts are available remotely.
-
-## Show the installed version
-
-```sh
-ec --version
-```
-
-The command prints the module version recorded by Go, such as `ec v1.0.0` or a commit-based pseudo-version. When no module version is available, it prints `ec devel`, with the revision and working-tree state when available.
+Each part is `ready` when its decoded `input.txt` file exists, or `locked` when it does not. Missing part directories are also shown as locked. Status uses local files only and does not indicate whether a part has been solved or whether more parts are available remotely.
 
 ## Development
 

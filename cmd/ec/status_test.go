@@ -21,7 +21,7 @@ func TestRunStatusWithDirectory(t *testing.T) {
 		if err := run(context.Background(), args, &output); err != nil {
 			t.Fatal(err)
 		}
-		if got, want := output.String(), "2024\n  quest-01: ready\n"; got != want {
+		if got, want := output.String(), "2024\n  quest-01\n    part-01: locked\n    part-02: ready\n    part-03: locked\n"; got != want {
 			t.Fatalf("output = %q, want %q", got, want)
 		}
 	}
@@ -51,7 +51,38 @@ func TestStatusGroupsEventsAndOrdersQuestsNumerically(t *testing.T) {
 	if err := runStatus(base, &output); err != nil {
 		t.Fatal(err)
 	}
-	want := "2024\n  quest-01: locked\n  quest-2: ready\n  quest-03: locked\n  quest-04: locked\n  quest-10: locked\n2025\n  quest-01: ready\nstory-1\n  quest-01: ready\n"
+	want := `2024
+  quest-01
+    part-01: locked
+    part-02: locked
+    part-03: locked
+  quest-2
+    part-01: locked
+    part-02: ready
+    part-03: locked
+  quest-03
+    part-01: locked
+    part-02: locked
+    part-03: locked
+  quest-04
+    part-01: locked
+    part-02: locked
+    part-03: locked
+  quest-10
+    part-01: locked
+    part-02: locked
+    part-03: locked
+2025
+  quest-01
+    part-01: ready
+    part-02: locked
+    part-03: locked
+story-1
+  quest-01
+    part-01: locked
+    part-02: locked
+    part-03: ready
+`
 	if output.String() != want {
 		t.Fatalf("output = %q, want %q", output.String(), want)
 	}
@@ -67,6 +98,79 @@ func TestStatusEmptyDirectory(t *testing.T) {
 	}
 }
 
+func TestStatusReportsEachPartIndependently(t *testing.T) {
+	for _, test := range []struct {
+		name  string
+		files []string
+		want  string
+	}{
+		{
+			name: "first part ready and later parts locked",
+			files: []string{
+				"part-01/input/input.txt",
+				"part-02/input/input-encoded.txt",
+				"part-03/input/input-encoded.txt",
+			},
+			want: "2024\n  quest-01\n    part-01: ready\n    part-02: locked\n    part-03: locked\n",
+		},
+		{
+			name: "all parts ready",
+			files: []string{
+				"part-01/input/input.txt",
+				"part-02/input/input.txt",
+				"part-03/input/input.txt",
+			},
+			want: "2024\n  quest-01\n    part-01: ready\n    part-02: ready\n    part-03: ready\n",
+		},
+		{
+			name: "all parts have only encoded inputs",
+			files: []string{
+				"part-01/input/input-encoded.txt",
+				"part-02/input/input-encoded.txt",
+				"part-03/input/input-encoded.txt",
+			},
+			want: "2024\n  quest-01\n    part-01: locked\n    part-02: locked\n    part-03: locked\n",
+		},
+		{
+			name: "all part directories missing",
+			want: "2024\n  quest-01\n    part-01: locked\n    part-02: locked\n    part-03: locked\n",
+		},
+		{
+			name:  "missing first part and third part directories",
+			files: []string{"part-02/input/input.txt"},
+			want:  "2024\n  quest-01\n    part-01: locked\n    part-02: ready\n    part-03: locked\n",
+		},
+		{
+			name: "nonpadded parts and extra parts",
+			files: []string{
+				"part-1/input/input.txt",
+				"part-2/input/input-encoded.txt",
+				"part-3/input/input.txt",
+				"part-04/input/input.txt",
+			},
+			want: "2024\n  quest-01\n    part-01: ready\n    part-02: locked\n    part-03: ready\n",
+		},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			base := t.TempDir()
+			questPath := "2024/quest-01"
+			if err := os.MkdirAll(filepath.Join(base, questPath), 0o755); err != nil {
+				t.Fatal(err)
+			}
+			for _, path := range test.files {
+				statusTestFile(t, base, filepath.Join(questPath, path), "notes")
+			}
+			var output bytes.Buffer
+			if err := runStatus(base, &output); err != nil {
+				t.Fatal(err)
+			}
+			if got := output.String(); got != test.want {
+				t.Fatalf("output = %q, want %q", got, test.want)
+			}
+		})
+	}
+}
+
 func TestStatusDirectoryNamedInputIsLocked(t *testing.T) {
 	base := t.TempDir()
 	if err := os.MkdirAll(filepath.Join(base, "2024/quest-01/part-01/input/input.txt"), 0o755); err != nil {
@@ -76,7 +180,7 @@ func TestStatusDirectoryNamedInputIsLocked(t *testing.T) {
 	if err := runStatus(base, &output); err != nil {
 		t.Fatal(err)
 	}
-	if got, want := output.String(), "2024\n  quest-01: locked\n"; got != want {
+	if got, want := output.String(), "2024\n  quest-01\n    part-01: locked\n    part-02: locked\n    part-03: locked\n"; got != want {
 		t.Fatalf("output = %q, want %q", got, want)
 	}
 }
@@ -94,7 +198,17 @@ func TestStatusAllowsInternalLinks(t *testing.T) {
 	if err := runStatus(base, &output); err != nil {
 		t.Fatal(err)
 	}
-	if got, want := output.String(), "2024\n  quest-01: ready\n  quest-02: ready\n"; got != want {
+	want := `2024
+  quest-01
+    part-01: ready
+    part-02: locked
+    part-03: locked
+  quest-02
+    part-01: ready
+    part-02: locked
+    part-03: locked
+`
+	if got := output.String(); got != want {
 		t.Fatalf("output = %q, want %q", got, want)
 	}
 }

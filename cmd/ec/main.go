@@ -12,8 +12,7 @@ import (
 const usage = `usage: ec [--dir <directory>] https://everybody.codes/event/<EVENT>/quests/<QUEST>
        ec auth
        ec auth check
-       ec status [--dir <directory>]
-       ec --version`
+       ec status [--dir <directory>]`
 
 func main() {
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt)
@@ -27,9 +26,6 @@ func main() {
 func run(ctx context.Context, args []string, output io.Writer) error {
 	if len(args) > 0 && args[0] == "auth" {
 		return runAuth(ctx, args[1:], os.Stdin, output)
-	}
-	if len(args) == 1 && args[0] == "--version" {
-		return printVersion(output)
 	}
 	dir := "."
 	dirSet := false
