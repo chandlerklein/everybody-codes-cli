@@ -55,7 +55,7 @@ func newRootCommand() *cobra.Command {
 	root := &cobra.Command{
 		Use:           "ec",
 		Version:       buildVersion(info),
-		Short:         "Manage Everybody Codes quest inputs",
+		Short:         "Manage Everybody Codes quest inputs and submit answers",
 		Args:          cobra.NoArgs,
 		SilenceErrors: true,
 		SilenceUsage:  true,
@@ -111,7 +111,7 @@ func newRootCommand() *cobra.Command {
 	get.Flags().StringVar(&downloadDir, "dir", ".", "Directory for quest inputs")
 	get.Flags().StringVarP(&year, "year", "y", strconv.Itoa(time.Now().Year()), "Quest year (requires --quest; defaults to the current year)")
 	get.Flags().StringVarP(&questNumber, "quest", "q", "", "Quest number in decimal (for example, 1 or 01)")
-	get.Flags().BoolVarP(&force, "force", "f", false, "Overwrite existing input files; always preserve answer.txt")
+	get.Flags().BoolVarP(&force, "force", "f", false, "Overwrite existing input files")
 	auth := &cobra.Command{
 		Use:   "auth",
 		Short: "Save a session cookie interactively",
@@ -144,6 +144,6 @@ func newRootCommand() *cobra.Command {
 		},
 	}
 	status.Flags().StringVar(&statusDir, "dir", ".", "Directory containing local quest inputs")
-	root.AddCommand(auth, get, status)
+	root.AddCommand(auth, get, status, newSubmitCommand())
 	return root
 }

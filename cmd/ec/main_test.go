@@ -31,6 +31,8 @@ func TestCommandHelp(t *testing.T) {
 		{[]string{"auth", "--help"}, "ec auth [flags]"},
 		{[]string{"auth", "check", "--help"}, "ec auth check [flags]"},
 		{[]string{"status", "--help"}, "ec status [flags]"},
+		{[]string{"submit", "--help"}, "ec submit --quest <quest> --part <part> [<ANSWER>]"},
+		{[]string{"help", "submit"}, "ec submit --quest <quest> --part <part> [<ANSWER>]"},
 		{[]string{"help", "auth", "check"}, "ec auth check [flags]"},
 	} {
 		t.Run(strings.Join(tt.args, " "), func(t *testing.T) {
@@ -51,7 +53,14 @@ func TestCommandHelp(t *testing.T) {
 			if tt.args[0] == "auth" && strings.Contains(output.String(), "--dir") {
 				t.Fatal("auth help includes the download/status directory flag")
 			}
-			if !slices.Contains(tt.args, "get") {
+			if slices.Contains(tt.args, "submit") {
+				for _, flag := range []string{"-y, --year", "-q, --quest", "-p, --part", "UTF-8", "current year", "standard input", "without leading zeros"} {
+					if !strings.Contains(output.String(), flag) {
+						t.Fatalf("submit help missing %q: %s", flag, output.String())
+					}
+				}
+			}
+			if !slices.Contains(tt.args, "get") && !slices.Contains(tt.args, "submit") {
 				if strings.Contains(output.String(), "--year") || strings.Contains(output.String(), "--quest") || strings.Contains(output.String(), "--force") {
 					t.Fatal("help outside get includes quest selection flags")
 				}
@@ -60,7 +69,7 @@ func TestCommandHelp(t *testing.T) {
 				if strings.Contains(output.String(), "--dir") {
 					t.Fatal("root help includes the directory flag")
 				}
-				for _, command := range []string{"auth", "get", "status"} {
+				for _, command := range []string{"auth", "get", "status", "submit"} {
 					if !strings.Contains(output.String(), "  "+command+" ") {
 						t.Fatalf("root help missing command %q: %s", command, output.String())
 					}
@@ -191,7 +200,7 @@ func TestCommandQuestDefaultsToCurrentYear(t *testing.T) {
 			for part := 1; part <= 3; part++ {
 				dir := fmt.Sprintf("solutions/%d/quest-01/part-%02d", year, part)
 				assertFile(t, filepath.Join(dir, "input", "input.txt"), testNotes[part-1].plain)
-				assertFile(t, filepath.Join(dir, "answer.txt"), "")
+				assertMissing(t, filepath.Join(dir, "answer.txt"))
 			}
 			wantCalls := []string{userURL, inputsEndpoint, keysEndpoint}
 			slices.Sort(api.calls)

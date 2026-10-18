@@ -18,13 +18,19 @@ import (
 // Retain the HTTP status so callers can distinguish expired sessions from
 // temporary server failures without inspecting the text of an error.
 type httpStatusError struct {
+	method     string
 	endpoint   string
 	statusCode int
 	status     string
+	body       string
 }
 
 func (e *httpStatusError) Error() string {
-	return fmt.Sprintf("GET %s: HTTP %s", e.endpoint, e.status)
+	message := fmt.Sprintf("%s %s: HTTP %s", e.method, e.endpoint, e.status)
+	if e.body != "" {
+		message += ": " + e.body
+	}
+	return message
 }
 
 func runAuthCheck(ctx context.Context, output io.Writer) error {
