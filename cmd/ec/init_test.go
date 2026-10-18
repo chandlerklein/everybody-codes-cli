@@ -53,9 +53,9 @@ func setup(t *testing.T) *testAPI {
 		},
 		statuses: map[string]int{},
 	}
-	oldClient := http.DefaultClient
-	t.Cleanup(func() { http.DefaultClient = oldClient })
-	http.DefaultClient = &http.Client{Transport: roundTripFunc(func(r *http.Request) (*http.Response, error) {
+	oldClient := apiClient
+	t.Cleanup(func() { apiClient = oldClient })
+	apiClient = &http.Client{CheckRedirect: oldClient.CheckRedirect, Transport: roundTripFunc(func(r *http.Request) (*http.Response, error) {
 		if r.Method != http.MethodGet {
 			t.Errorf("method = %s, want GET", r.Method)
 		}
@@ -160,10 +160,10 @@ func TestInitQuest(t *testing.T) {
 
 func TestInitQuestFetchesKeysAlongsideSeedAndInputs(t *testing.T) {
 	setup(t)
-	transport := http.DefaultClient.Transport
+	transport := apiClient.Transport
 	inputsStarted := make(chan struct{})
 	keysStarted := make(chan struct{})
-	http.DefaultClient.Transport = roundTripFunc(func(r *http.Request) (*http.Response, error) {
+	apiClient.Transport = roundTripFunc(func(r *http.Request) (*http.Response, error) {
 		var peerStarted <-chan struct{}
 		switch r.URL.String() {
 		case userURL:
@@ -205,10 +205,10 @@ func TestInitQuestCancelsKeysOnFailure(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			api := setup(t)
 			api.statuses[tt.endpoint] = http.StatusNotFound
-			transport := http.DefaultClient.Transport
+			transport := apiClient.Transport
 			keysStarted := make(chan struct{})
 			keysCanceled := make(chan struct{})
-			http.DefaultClient.Transport = roundTripFunc(func(r *http.Request) (*http.Response, error) {
+			apiClient.Transport = roundTripFunc(func(r *http.Request) (*http.Response, error) {
 				switch r.URL.String() {
 				case keysURL:
 					close(keysStarted)
@@ -391,12 +391,17 @@ func TestInitQuestFileConflicts(t *testing.T) {
 }
 
 func TestWriteNotesPreservesExistingFile(t *testing.T) {
-	path := filepath.Join(t.TempDir(), "input.txt")
-	writeTestFile(t, path, "existing notes")
-	if err := writeNotes(path, []byte("replacement notes")); err != nil {
+	dir := t.TempDir()
+	root, err := os.OpenRoot(dir)
+	if err != nil {
 		t.Fatal(err)
 	}
-	assertFile(t, path, "existing notes")
+	defer root.Close()
+	writeTestFile(t, filepath.Join(dir, "input.txt"), "existing notes")
+	if err := writeNotes(root, "input.txt", []byte("replacement notes")); err != nil {
+		t.Fatal(err)
+	}
+	assertFile(t, filepath.Join(dir, "input.txt"), "existing notes")
 }
 
 func TestInitQuestFailures(t *testing.T) {

@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"crypto/rand"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -16,7 +17,16 @@ import (
 	"time"
 )
 
-const apiBaseURL = "https://api.everybody.codes"
+const (
+	apiBaseURL           = "https://api.everybody.codes"
+	maxJSONResponseBytes = 16 << 20
+)
+
+var apiClient = &http.Client{
+	CheckRedirect: func(*http.Request, []*http.Request) error {
+		return http.ErrUseLastResponse
+	},
+}
 
 var questPath = regexp.MustCompile(`^/event/([A-Za-z0-9][A-Za-z0-9_-]*)/quests/([0-9]+)/?$`)
 
@@ -68,14 +78,23 @@ func loadSession() (*http.Cookie, error) {
 }
 
 func initQuest(ctx context.Context, q quest, baseDir string, output io.Writer) error {
-	dir := filepath.Join(baseDir, q.event, fmt.Sprintf("quest-%02d", q.number))
+	if err := os.MkdirAll(baseDir, 0o755); err != nil {
+		return fmt.Errorf("create output directory: %w", err)
+	}
+	root, err := os.OpenRoot(baseDir)
+	if err != nil {
+		return fmt.Errorf("open output directory: %w", err)
+	}
+	defer root.Close()
+	dir := filepath.Join(q.event, fmt.Sprintf("quest-%02d", q.number))
+	displayDir := filepath.Join(baseDir, dir)
 	var pending []int
 	for part := 1; part <= 3; part++ {
 		inputDir := partInputDir(dir, part)
-		if err := os.MkdirAll(inputDir, 0o755); err != nil {
+		if err := root.MkdirAll(inputDir, 0o755); err != nil {
 			return fmt.Errorf("create input directory: %w", err)
 		}
-		info, err := os.Stat(filepath.Join(inputDir, "input.txt"))
+		info, err := root.Stat(filepath.Join(inputDir, "input.txt"))
 		switch {
 		case errors.Is(err, os.ErrNotExist):
 			pending = append(pending, part)
@@ -86,7 +105,7 @@ func initQuest(ctx context.Context, q quest, baseDir string, output io.Writer) e
 		}
 	}
 	if len(pending) == 0 {
-		_, err := fmt.Fprintf(output, "%s: all notes already exist\n", dir)
+		_, err := fmt.Fprintf(output, "%s: all notes already exist\n", displayDir)
 		return err
 	}
 	cookie, err := loadSession()
@@ -128,7 +147,7 @@ func initQuest(ctx context.Context, q quest, baseDir string, output io.Writer) e
 			return fmt.Errorf("input response is missing encoded notes for part %d", part)
 		}
 		path := filepath.Join(partInputDir(dir, part), "input-encoded.txt")
-		if err := os.WriteFile(path, []byte(encoded), 0o644); err != nil {
+		if err := writeEncoded(root, path, []byte(encoded)); err != nil {
 			return fmt.Errorf("write encoded notes for part %d: %w", part, err)
 		}
 	}
@@ -150,22 +169,18 @@ func initQuest(ctx context.Context, q quest, baseDir string, output io.Writer) e
 			continue
 		}
 		inputDir := partInputDir(dir, part)
-		encoded, err := os.ReadFile(filepath.Join(inputDir, "input-encoded.txt"))
-		if err != nil {
-			return fmt.Errorf("read encoded notes for part %d: %w", part, err)
-		}
-		notes, err := decryptNotes(string(encoded), key)
+		notes, err := decryptNotes(inputs[strconv.Itoa(part)], key)
 		if err != nil {
 			return fmt.Errorf("decode part %d notes: %w", part, err)
 		}
-		if err := writeNotes(filepath.Join(inputDir, "input.txt"), notes); err != nil {
+		if err := writeNotes(root, filepath.Join(inputDir, "input.txt"), notes); err != nil {
 			return fmt.Errorf("write part %d notes: %w", part, err)
 		}
 		if _, err := fmt.Fprintf(output, "Part %d: decoded notes saved\n", part); err != nil {
 			return err
 		}
 	}
-	_, err = fmt.Fprintf(output, "Initialized %s\n", dir)
+	_, err = fmt.Fprintf(output, "Initialized %s\n", displayDir)
 	return err
 }
 
@@ -181,7 +196,7 @@ func getJSON(ctx context.Context, endpoint string, cookie *http.Cookie, target a
 		return err
 	}
 	req.AddCookie(cookie)
-	resp, err := http.DefaultClient.Do(req)
+	resp, err := apiClient.Do(req)
 	if err != nil {
 		return err
 	}
@@ -189,15 +204,39 @@ func getJSON(ctx context.Context, endpoint string, cookie *http.Cookie, target a
 	if resp.StatusCode != http.StatusOK {
 		return fmt.Errorf("GET %s: HTTP %s", endpoint, resp.Status)
 	}
-	if err := json.NewDecoder(resp.Body).Decode(target); err != nil {
+	body, err := io.ReadAll(io.LimitReader(resp.Body, maxJSONResponseBytes+1))
+	if err != nil {
+		return fmt.Errorf("read JSON from %s: %w", endpoint, err)
+	}
+	if len(body) > maxJSONResponseBytes {
+		return fmt.Errorf("JSON response from %s exceeds %d bytes", endpoint, maxJSONResponseBytes)
+	}
+	if err := json.Unmarshal(body, target); err != nil {
 		return fmt.Errorf("invalid JSON from %s: %w", endpoint, err)
 	}
 	return nil
 }
 
+// Rename replaces the destination entry without following symlinks or
+// truncating another file linked to the same inode.
+func writeEncoded(root *os.Root, path string, encoded []byte) error {
+	temp := filepath.Join(filepath.Dir(path), ".ec-"+rand.Text()+".tmp")
+	f, err := root.OpenFile(temp, os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0o644)
+	if err != nil {
+		return err
+	}
+	defer root.Remove(temp)
+	_, writeErr := f.Write(encoded)
+	closeErr := f.Close()
+	if err := errors.Join(writeErr, closeErr); err != nil {
+		return err
+	}
+	return root.Rename(temp, path)
+}
+
 // Exclusive creation also preserves notes written by another ec process.
-func writeNotes(path string, notes []byte) error {
-	f, err := os.OpenFile(path, os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0o644)
+func writeNotes(root *os.Root, path string, notes []byte) error {
+	f, err := root.OpenFile(path, os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0o644)
 	if errors.Is(err, os.ErrExist) {
 		return nil
 	}
@@ -208,7 +247,7 @@ func writeNotes(path string, notes []byte) error {
 	closeErr := f.Close()
 	if err := errors.Join(writeErr, closeErr); err != nil {
 		// Do not leave an incomplete input.txt that a later run would skip.
-		_ = os.Remove(path)
+		_ = root.Remove(path)
 		return err
 	}
 	return nil
