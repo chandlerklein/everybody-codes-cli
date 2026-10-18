@@ -6,9 +6,24 @@ import (
 	"io"
 	"os"
 	"os/signal"
+	"runtime/debug"
 
 	"github.com/spf13/cobra"
 )
+
+// GoReleaser sets version to the release tag with -ldflags.
+var version = "dev"
+
+func buildVersion(info *debug.BuildInfo) string {
+	if version != "dev" {
+		return version
+	}
+	// go install module@version embeds the module version without linker flags.
+	if info != nil && info.Main.Version != "" && info.Main.Version != "(devel)" {
+		return info.Main.Version
+	}
+	return version
+}
 
 func main() {
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt)
@@ -33,8 +48,10 @@ func run(ctx context.Context, args []string, output io.Writer) error {
 
 func newRootCommand() *cobra.Command {
 	var downloadDir, statusDir, event, questNumber string
+	info, _ := debug.ReadBuildInfo()
 	root := &cobra.Command{
 		Use:           "ec",
+		Version:       buildVersion(info),
 		Short:         "Manage Everybody Codes quest inputs",
 		Args:          cobra.NoArgs,
 		SilenceErrors: true,
@@ -78,6 +95,7 @@ func newRootCommand() *cobra.Command {
 			return initQuest(cmd.Context(), q, downloadDir, cmd.OutOrStdout())
 		},
 	}
+	root.SetVersionTemplate("ec {{.Version}}\n")
 	get.Flags().StringVar(&downloadDir, "dir", ".", "Directory for quest inputs")
 	get.Flags().StringVarP(&event, "event", "e", "", "Event identifier (for example, 2024; requires --quest)")
 	get.Flags().StringVarP(&questNumber, "quest", "q", "", "Quest number in decimal (for example, 1 or 01; requires --event)")

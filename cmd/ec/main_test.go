@@ -8,6 +8,7 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"runtime/debug"
 	"slices"
 	"strings"
 	"testing"
@@ -63,9 +64,65 @@ func TestCommandHelp(t *testing.T) {
 					}
 				}
 			}
-			if strings.Contains(output.String(), "--version") {
-				t.Fatal("help includes a version flag")
+			if tt.want == "ec [command]" && !strings.Contains(output.String(), "--version") {
+				t.Fatal("root help missing the version flag")
 			}
+			if tt.want != "ec [command]" && strings.Contains(output.String(), "--version") {
+				t.Fatal("subcommand help includes the root version flag")
+			}
+		})
+	}
+}
+
+func TestBuildVersion(t *testing.T) {
+	original := version
+	t.Cleanup(func() { version = original })
+	for _, tt := range []struct {
+		name    string
+		version string
+		info    *debug.BuildInfo
+		want    string
+	}{
+		{"release", "v0.1.0", nil, "v0.1.0"},
+		{"prerelease", "v0.2.0-rc.1", nil, "v0.2.0-rc.1"},
+		{"linker takes precedence", "v0.2.0", &debug.BuildInfo{Main: debug.Module{Version: "v0.1.0"}}, "v0.2.0"},
+		{"go install", "dev", &debug.BuildInfo{Main: debug.Module{Version: "v0.1.0"}}, "v0.1.0"},
+		{"local build", "dev", &debug.BuildInfo{Main: debug.Module{Version: "(devel)"}}, "dev"},
+		{"empty build info", "dev", &debug.BuildInfo{}, "dev"},
+		{"missing build info", "dev", nil, "dev"},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			version = tt.version
+			if got := buildVersion(tt.info); got != tt.want {
+				t.Fatalf("version = %q, want %q", got, tt.want)
+			}
+		})
+	}
+}
+
+func TestCommandVersionWithoutSideEffects(t *testing.T) {
+	original := version
+	t.Cleanup(func() { version = original })
+	for _, value := range []string{"dev", "v0.1.0", "v0.2.0-rc.1"} {
+		t.Run(value, func(t *testing.T) {
+			api := setup(t)
+			version = value
+			// Version reporting works without a session or quest arguments.
+			if err := os.Remove(filepath.Join(os.Getenv("HOME"), ".config", "everybody-codes", "session")); err != nil {
+				t.Fatal(err)
+			}
+			var output bytes.Buffer
+			if err := run(t.Context(), []string{"--version"}, &output); err != nil {
+				t.Fatal(err)
+			}
+			if got, want := output.String(), "ec "+value+"\n"; got != want {
+				t.Fatalf("output = %q, want %q", got, want)
+			}
+			if len(api.calls) != 0 {
+				t.Fatal("version command made HTTP requests")
+			}
+			assertMissing(t, "2024")
+			assertMissing(t, filepath.Join(os.Getenv("HOME"), ".config", "everybody-codes", "session"))
 		})
 	}
 }
@@ -189,7 +246,6 @@ func TestCommandRejectsInvalidArgumentsWithoutSideEffects(t *testing.T) {
 		{"--dir", "elsewhere", "auth"},
 		{"auth", "check", "--dir", "elsewhere"},
 		{"--dir", "elsewhere", "auth", "check"},
-		{"--version"},
 		{"version"},
 	} {
 		t.Run(strings.Join(args, " "), func(t *testing.T) {
