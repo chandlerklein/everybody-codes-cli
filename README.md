@@ -38,6 +38,13 @@ The session file takes precedence. If it is missing, empty, or contains only whi
 
 ## Download quest inputs
 
+> [!CAUTION]
+> Do not commit quest inputs or descriptions to your code repository. Get permission before reusing or sharing this content. Add the following to your repository's `.gitignore` to exclude all generated input directories:
+>
+> ```gitignore
+> **/input/
+> ```
+
 Run from the directory where you keep your quest solutions:
 
 ```sh
