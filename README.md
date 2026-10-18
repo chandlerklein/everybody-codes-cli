@@ -4,7 +4,7 @@
 
 ## Install
 
-Requires Go 1.27.2 or newer.
+Requires Go 1.26 or newer.
 
 ```sh
 go install github.com/chandlerklein/everybody-codes-cli/cmd/ec@latest
