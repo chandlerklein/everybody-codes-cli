@@ -15,8 +15,6 @@ import (
 	"golang.org/x/term"
 )
 
-const authUsage = "usage: ec auth [check]"
-
 // Retain the HTTP status so callers can distinguish expired sessions from
 // temporary server failures without inspecting the text of an error.
 type httpStatusError struct {
@@ -29,21 +27,19 @@ func (e *httpStatusError) Error() string {
 	return fmt.Sprintf("GET %s: HTTP %s", e.endpoint, e.status)
 }
 
-func runAuth(ctx context.Context, args []string, input io.Reader, output io.Writer) error {
-	if len(args) == 1 && args[0] == "check" {
-		cookie, err := loadSession()
-		if err != nil {
-			return fmt.Errorf("%w; run ec auth to save a session cookie", err)
-		}
-		if err := checkSession(ctx, cookie); err != nil {
-			return err
-		}
-		_, err = fmt.Fprintln(output, "Session is valid.")
+func runAuthCheck(ctx context.Context, output io.Writer) error {
+	cookie, err := loadSession()
+	if err != nil {
+		return fmt.Errorf("%w; run ec auth to save a session cookie", err)
+	}
+	if err := checkSession(ctx, cookie); err != nil {
 		return err
 	}
-	if len(args) != 0 {
-		return errors.New(authUsage)
-	}
+	_, err = fmt.Fprintln(output, "Session is valid.")
+	return err
+}
+
+func runAuth(ctx context.Context, input io.Reader, output io.Writer) error {
 	if err := ctx.Err(); err != nil {
 		return err
 	}

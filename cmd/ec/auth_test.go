@@ -19,7 +19,7 @@ func TestAuthSavesSession(t *testing.T) {
 		t.Fatal(err)
 	}
 	var output bytes.Buffer
-	if err := runAuth(t.Context(), nil, strings.NewReader(" replacement-cookie \r\n"), &output); err != nil {
+	if err := runAuth(t.Context(), strings.NewReader(" replacement-cookie \r\n"), &output); err != nil {
 		t.Fatal(err)
 	}
 	assertFile(t, path, "replacement-cookie\n")
@@ -47,7 +47,7 @@ func TestAuthSavesSession(t *testing.T) {
 
 func TestAuthCreatesSessionDirectory(t *testing.T) {
 	t.Setenv("HOME", t.TempDir())
-	if err := runAuth(t.Context(), nil, strings.NewReader(testSession+"\n"), io.Discard); err != nil {
+	if err := runAuth(t.Context(), strings.NewReader(testSession+"\n"), io.Discard); err != nil {
 		t.Fatal(err)
 	}
 	path := filepath.Join(os.Getenv("HOME"), ".config", "everybody-codes", "session")
@@ -102,24 +102,11 @@ func TestAuthRejectsInvalidInputWithoutReplacingSession(t *testing.T) {
 		t.Run(value[:min(len(value), 20)], func(t *testing.T) {
 			setup(t)
 			var output bytes.Buffer
-			if err := runAuth(t.Context(), nil, strings.NewReader(value), &output); err == nil {
+			if err := runAuth(t.Context(), strings.NewReader(value), &output); err == nil {
 				t.Fatal("accepted invalid cookie")
 			}
 			assertFile(t, filepath.Join(os.Getenv("HOME"), ".config", "everybody-codes", "session"), testSession+"\n")
 		})
-	}
-}
-
-func TestAuthRejectsArguments(t *testing.T) {
-	for _, args := range [][]string{{testSession}, {"--help"}, {"--stdin"}, {"check", "extra"}} {
-		var output bytes.Buffer
-		err := runAuth(t.Context(), args, strings.NewReader(testSession), &output)
-		if err == nil || err.Error() != authUsage {
-			t.Fatalf("args = %v, error = %v", args, err)
-		}
-		if output.Len() != 0 {
-			t.Fatal("prompted despite unsupported arguments")
-		}
 	}
 }
 
@@ -129,7 +116,7 @@ func TestAuthCheck(t *testing.T) {
 			api := setup(t)
 			api.bodies[userURL] = `{"seed":` + seed + `}`
 			var output bytes.Buffer
-			if err := runAuth(t.Context(), []string{"check"}, nil, &output); err != nil {
+			if err := runAuthCheck(t.Context(), &output); err != nil {
 				t.Fatal(err)
 			}
 			if output.String() != "Session is valid.\n" {
@@ -178,7 +165,7 @@ func TestAuthCheckFailure(t *testing.T) {
 			api.statuses[userURL] = tt.status
 			api.bodies[userURL] = tt.body
 			var output bytes.Buffer
-			err := runAuth(t.Context(), []string{"check"}, nil, &output)
+			err := runAuthCheck(t.Context(), &output)
 			if err == nil || !strings.Contains(err.Error(), tt.want) {
 				t.Fatalf("error = %v, want %s", err, tt.want)
 			}
@@ -200,7 +187,7 @@ func TestAuthCheckNetworkFailure(t *testing.T) {
 	apiClient.Transport = roundTripFunc(func(*http.Request) (*http.Response, error) {
 		return nil, errors.New("network unavailable")
 	})
-	err := runAuth(t.Context(), []string{"check"}, nil, io.Discard)
+	err := runAuthCheck(t.Context(), io.Discard)
 	if err == nil || !strings.Contains(err.Error(), "could not verify session") || strings.Contains(err.Error(), "replace") {
 		t.Fatalf("error = %v", err)
 	}
@@ -212,11 +199,11 @@ func TestAuthCheckUsesSessionFallback(t *testing.T) {
 		t.Fatal(err)
 	}
 	t.Setenv("EVERYBODY_CODES_SESSION_COOKIE", testSession)
-	if err := runAuth(t.Context(), []string{"check"}, nil, io.Discard); err != nil {
+	if err := runAuthCheck(t.Context(), io.Discard); err != nil {
 		t.Fatal(err)
 	}
 	t.Setenv("EVERYBODY_CODES_SESSION_COOKIE", "")
-	err := runAuth(t.Context(), []string{"check"}, nil, io.Discard)
+	err := runAuthCheck(t.Context(), io.Discard)
 	if err == nil || !strings.Contains(err.Error(), "run ec auth") {
 		t.Fatalf("error = %v, want setup instructions", err)
 	}
@@ -246,7 +233,7 @@ func TestAuthCancellation(t *testing.T) {
 	defer writer.Close()
 	ctx, cancel := context.WithCancel(t.Context())
 	cancel()
-	if err := runAuth(ctx, nil, reader, io.Discard); !errors.Is(err, context.Canceled) {
+	if err := runAuth(ctx, reader, io.Discard); !errors.Is(err, context.Canceled) {
 		t.Fatalf("error = %v", err)
 	}
 	assertFile(t, filepath.Join(os.Getenv("HOME"), ".config", "everybody-codes", "session"), testSession+"\n")

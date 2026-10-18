@@ -435,12 +435,12 @@ func TestRunInvalidDirectoryFlag(t *testing.T) {
 		name, want string
 		args       []string
 	}{
-		{"missing value", "requires a directory", []string{testURL, "--dir"}},
+		{"missing value", "flag needs an argument", []string{testURL, "--dir"}},
 		{"empty value", "requires a nonempty directory", []string{"--dir", "", testURL}},
 		{"empty equals value", "requires a nonempty directory", []string{testURL, "--dir="}},
-		{"unknown option", "unknown option", []string{"--directory", "elsewhere", testURL}},
-		{"missing URL", usage, []string{"--dir", "elsewhere"}},
-		{"flag after end of options", usage, []string{"--", testURL, "--dir", "elsewhere"}},
+		{"unknown option", "unknown flag", []string{"--directory", "elsewhere", testURL}},
+		{"missing URL", "accepts 1 arg(s)", []string{"--dir", "elsewhere"}},
+		{"flag after end of options", "accepts 1 arg(s)", []string{"--", testURL, "--dir", "elsewhere"}},
 	} {
 		t.Run(tt.name, func(t *testing.T) {
 			api := setup(t)
@@ -652,20 +652,6 @@ func TestParseQuestURL(t *testing.T) {
 	} {
 		if _, err := parseQuestURL(raw); err == nil {
 			t.Errorf("accepted invalid URL %q", raw)
-		}
-	}
-}
-
-func TestRunUsage(t *testing.T) {
-	for _, args := range [][]string{nil, {"unknown", testURL}, {testURL, "extra"}, {"init", testURL}} {
-		if err := run(context.Background(), args, io.Discard); err == nil || err.Error() != usage {
-			t.Errorf("run(%v) error = %v, want usage", args, err)
-		}
-	}
-	for _, args := range [][]string{{"--help"}, {"-h"}, {"--dir", "elsewhere", "--help"}, {testURL, "-h"}} {
-		var output bytes.Buffer
-		if err := run(context.Background(), args, &output); err != nil || strings.TrimSpace(output.String()) != usage {
-			t.Errorf("help output = %q, error = %v", output.String(), err)
 		}
 	}
 }
