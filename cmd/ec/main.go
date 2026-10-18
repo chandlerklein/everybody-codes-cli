@@ -9,7 +9,11 @@ import (
 	"strings"
 )
 
-const usage = "usage: ec [--dir <directory>] https://everybody.codes/event/<EVENT>/quests/<QUEST>"
+const usage = `usage: ec [--dir <directory>] https://everybody.codes/event/<EVENT>/quests/<QUEST>
+       ec auth
+       ec auth check
+       ec status [--dir <directory>]
+       ec --version`
 
 func main() {
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt)
@@ -21,18 +25,27 @@ func main() {
 }
 
 func run(ctx context.Context, args []string, output io.Writer) error {
+	if len(args) > 0 && args[0] == "auth" {
+		return runAuth(ctx, args[1:], os.Stdin, output)
+	}
+	if len(args) == 1 && args[0] == "--version" {
+		return printVersion(output)
+	}
 	dir := "."
+	dirSet := false
 	var positional []string
 	for i := 0; i < len(args); i++ {
 		arg := args[i]
 		switch {
 		case arg == "--dir":
+			dirSet = true
 			i++
 			if i >= len(args) {
 				return fmt.Errorf("--dir requires a directory\n%s", usage)
 			}
 			dir = args[i]
 		case strings.HasPrefix(arg, "--dir="):
+			dirSet = true
 			dir = strings.TrimPrefix(arg, "--dir=")
 		case arg == "--help" || arg == "-h":
 			_, err := fmt.Fprintln(output, usage)
@@ -51,6 +64,12 @@ func run(ctx context.Context, args []string, output io.Writer) error {
 	}
 	if len(positional) != 1 {
 		return fmt.Errorf("%s", usage)
+	}
+	if positional[0] == "status" {
+		return runStatus(dir, output)
+	}
+	if positional[0] == "auth" && dirSet {
+		return fmt.Errorf("ec auth does not accept flags\n%s", usage)
 	}
 	q, err := parseQuestURL(positional[0])
 	if err != nil {
