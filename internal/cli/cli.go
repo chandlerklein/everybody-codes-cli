@@ -23,7 +23,7 @@ func execute(ctx context.Context, args []string, input io.Reader, output io.Writ
 	cmd.SetArgs(args)
 	cmd.SetIn(input)
 	cmd.SetOut(output)
-	cmd.SetErr(output)
+	cmd.SetErr(os.Stderr)
 	return cmd.ExecuteContext(ctx)
 }
 

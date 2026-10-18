@@ -87,6 +87,34 @@ func TestCommandHelp(t *testing.T) {
 	}
 }
 
+func TestCommandCompletionOutput(t *testing.T) {
+	for _, request := range []string{"__complete", "__completeNoDesc"} {
+		for _, tt := range []struct {
+			name      string
+			args      []string
+			want      string
+			directive string
+		}{
+			{"commands", []string{""}, "get", ":4\n"},
+			{"flags", []string{"get", "--"}, "--quest", ":4\n"},
+			{"flag value", []string{"submit", "--part", ""}, "", ":0\n"},
+		} {
+			t.Run(request+"/"+tt.name, func(t *testing.T) {
+				var output bytes.Buffer
+				if err := Run(t.Context(), append([]string{request}, tt.args...), &output, "dev"); err != nil {
+					t.Fatal(err)
+				}
+				if got := output.String(); !strings.Contains(got, tt.want) || !strings.HasSuffix(got, tt.directive) {
+					t.Fatalf("completion output = %q, want %q and final directive %q", got, tt.want, tt.directive)
+				}
+				if strings.Contains(output.String(), "Completion ended with directive:") {
+					t.Fatalf("completion diagnostics leaked into stdout: %q", output.String())
+				}
+			})
+		}
+	}
+}
+
 func TestCommandVersionWithoutSideEffects(t *testing.T) {
 	for _, value := range []string{"dev", "v0.1.0", "v0.2.0-rc.1"} {
 		t.Run(value, func(t *testing.T) {
