@@ -257,14 +257,108 @@ func TestInitQuestUnlocksPartsOnRerun(t *testing.T) {
 	// Completed parts are skipped even if their remote input and key are unusable.
 	api.bodies[inputsURL] = jsonString(t, map[string]string{"2": testNotes[1].encoded, "3": testNotes[2].encoded})
 	api.bodies[keysURL] = jsonString(t, map[string]any{"key1": 42, "key2": testKey, "key3": testKey})
+	api.calls = nil
+	delete(api.bodies, userURL)
+	delete(api.bodies, inputsURL)
 	if err := run(context.Background(), []string{testURL}, io.Discard); err != nil {
 		t.Fatal(err)
+	}
+	if !slices.Equal(api.calls, []string{keysURL}) {
+		t.Errorf("requests = %v, want only quest keys", api.calls)
 	}
 	assertFile(t, "2024/quest-01/part-01/input/input.txt", "keep my existing notes")
 	assertFile(t, "2024/quest-01/part-01/input/input-encoded.txt", testNotes[0].encoded)
 	for part := 2; part <= 3; part++ {
 		assertFile(t, fmt.Sprintf("2024/quest-01/part-%02d/input/input.txt", part), testNotes[part-1].plain)
 	}
+}
+
+func TestInitQuestFetchesOnlyMissingEncodedNotes(t *testing.T) {
+	api := setup(t)
+	// Only part 2 is missing ciphertext. Its response need not include cached
+	// part 1 or the completed part 3, and existing cache content stays intact.
+	cachePath := "2024/quest-01/part-01/input/input-encoded.txt"
+	writeTestFile(t, cachePath, testNotes[0].encoded+"\n")
+	writeTestFile(t, "2024/quest-01/part-03/input/input.txt", "existing notes")
+	api.bodies[inputsURL] = jsonString(t, map[string]string{"2": testNotes[1].encoded})
+	if err := run(context.Background(), []string{testURL}, io.Discard); err != nil {
+		t.Fatal(err)
+	}
+	assertFile(t, cachePath, testNotes[0].encoded+"\n")
+	assertFile(t, "2024/quest-01/part-01/input/input.txt", testNotes[0].plain)
+	assertFile(t, "2024/quest-01/part-02/input/input-encoded.txt", testNotes[1].encoded)
+	assertFile(t, "2024/quest-01/part-02/input/input.txt", testNotes[1].plain)
+	assertFile(t, "2024/quest-01/part-03/input/input.txt", "existing notes")
+	wantCalls := []string{userURL, inputsURL, keysURL}
+	slices.Sort(api.calls)
+	slices.Sort(wantCalls)
+	if !slices.Equal(api.calls, wantCalls) {
+		t.Errorf("requests = %v, want %v", api.calls, wantCalls)
+	}
+}
+
+func TestInitQuestRefreshesMalformedCache(t *testing.T) {
+	for _, tt := range []struct {
+		name, encoded string
+	}{
+		{"empty", ""},
+		{"whitespace", " \n\t"},
+		{"not hex", "invalid ciphertext"},
+		{"incomplete AES block", "deadbeef"},
+		{"oversized", strings.Repeat("0", maxJSONResponseBytes+1)},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			api := setup(t)
+			for part := 1; part <= 3; part++ {
+				encoded := testNotes[part-1].encoded
+				if part == 1 {
+					encoded = tt.encoded
+				}
+				writeTestFile(t, fmt.Sprintf("2024/quest-01/part-%02d/input/input-encoded.txt", part), encoded)
+			}
+			api.bodies[inputsURL] = jsonString(t, map[string]string{"1": testNotes[0].encoded})
+			if err := run(context.Background(), []string{testURL}, io.Discard); err != nil {
+				t.Fatal(err)
+			}
+			assertFile(t, "2024/quest-01/part-01/input/input-encoded.txt", testNotes[0].encoded)
+			for part := 1; part <= 3; part++ {
+				assertFile(t, fmt.Sprintf("2024/quest-01/part-%02d/input/input.txt", part), testNotes[part-1].plain)
+			}
+		})
+	}
+}
+
+func TestInitQuestReportsUnreadableCache(t *testing.T) {
+	api := setup(t)
+	// A directory is a portable way to exercise a read failure, including
+	// when tests run as a user who can bypass ordinary file permissions.
+	path := "2024/quest-01/part-01/input/input-encoded.txt"
+	if err := os.MkdirAll(path, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	err := run(context.Background(), []string{testURL}, io.Discard)
+	if err == nil || !strings.Contains(err.Error(), "read encoded notes for part 1") {
+		t.Fatalf("error = %v, want cache read failure", err)
+	}
+	if len(api.calls) != 0 {
+		t.Errorf("unreadable cache caused HTTP requests: %v", api.calls)
+	}
+}
+
+func TestInitQuestCachedInputsStillRequireKeys(t *testing.T) {
+	api := setup(t)
+	for part := 1; part <= 3; part++ {
+		writeTestFile(t, fmt.Sprintf("2024/quest-01/part-%02d/input/input-encoded.txt", part), testNotes[part-1].encoded)
+	}
+	api.statuses[keysURL] = http.StatusUnauthorized
+	err := run(context.Background(), []string{testURL}, io.Discard)
+	if err == nil || !strings.Contains(err.Error(), "get quest keys") || !strings.Contains(err.Error(), "HTTP 401") {
+		t.Fatalf("error = %v, want quest keys HTTP 401", err)
+	}
+	if !slices.Equal(api.calls, []string{keysURL}) {
+		t.Errorf("requests = %v, want only quest keys", api.calls)
+	}
+	assertMissing(t, "2024/quest-01/part-01/input/input.txt")
 }
 
 func TestInitQuestTwoDigitNumber(t *testing.T) {
@@ -341,12 +435,12 @@ func TestRunInvalidDirectoryFlag(t *testing.T) {
 		name, want string
 		args       []string
 	}{
-		{"missing value", "requires a directory", []string{testURL, "--dir"}},
+		{"missing value", "flag needs an argument", []string{testURL, "--dir"}},
 		{"empty value", "requires a nonempty directory", []string{"--dir", "", testURL}},
 		{"empty equals value", "requires a nonempty directory", []string{testURL, "--dir="}},
-		{"unknown option", "unknown option", []string{"--directory", "elsewhere", testURL}},
-		{"missing URL", usage, []string{"--dir", "elsewhere"}},
-		{"flag after end of options", usage, []string{"--", testURL, "--dir", "elsewhere"}},
+		{"unknown option", "unknown flag", []string{"--directory", "elsewhere", testURL}},
+		{"missing URL", "accepts 1 arg(s)", []string{"--dir", "elsewhere"}},
+		{"flag after end of options", "accepts 1 arg(s)", []string{"--", testURL, "--dir", "elsewhere"}},
 	} {
 		t.Run(tt.name, func(t *testing.T) {
 			api := setup(t)
@@ -368,7 +462,7 @@ func TestInitQuestFileConflicts(t *testing.T) {
 	}{
 		{"event is a file", "2024", "create input directory", false},
 		{"notes is a directory", "2024/quest-01/part-01/input/input.txt", "must be a regular file", true},
-		{"encoded notes is a directory", "2024/quest-01/part-01/input/input-encoded.txt", "write encoded notes", true},
+		{"encoded notes is a directory", "2024/quest-01/part-01/input/input-encoded.txt", "read encoded notes", true},
 	} {
 		t.Run(tt.name, func(t *testing.T) {
 			setup(t)
@@ -558,20 +652,6 @@ func TestParseQuestURL(t *testing.T) {
 	} {
 		if _, err := parseQuestURL(raw); err == nil {
 			t.Errorf("accepted invalid URL %q", raw)
-		}
-	}
-}
-
-func TestRunUsage(t *testing.T) {
-	for _, args := range [][]string{nil, {"unknown", testURL}, {testURL, "extra"}, {"init", testURL}} {
-		if err := run(context.Background(), args, io.Discard); err == nil || err.Error() != usage {
-			t.Errorf("run(%v) error = %v, want usage", args, err)
-		}
-	}
-	for _, args := range [][]string{{"--help"}, {"-h"}, {"--dir", "elsewhere", "--help"}, {testURL, "-h"}} {
-		var output bytes.Buffer
-		if err := run(context.Background(), args, &output); err != nil || strings.TrimSpace(output.String()) != usage {
-			t.Errorf("help output = %q, error = %v", output.String(), err)
 		}
 	}
 }

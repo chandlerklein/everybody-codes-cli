@@ -2,7 +2,9 @@ package main
 
 import (
 	"context"
+	"crypto/aes"
 	"crypto/rand"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -108,11 +110,25 @@ func initQuest(ctx context.Context, q quest, baseDir string, output io.Writer) e
 		_, err := fmt.Fprintf(output, "%s: all notes already exist\n", displayDir)
 		return err
 	}
+	inputs := make(map[string]string, len(pending))
+	var missing []int
+	for _, part := range pending {
+		path := filepath.Join(partInputDir(dir, part), "input-encoded.txt")
+		encoded, err := readEncoded(root, path)
+		if err != nil {
+			return fmt.Errorf("read encoded notes for part %d: %w", part, err)
+		}
+		if encoded == "" {
+			missing = append(missing, part)
+			continue
+		}
+		inputs[strconv.Itoa(part)] = encoded
+	}
 	cookie, err := loadSession()
 	if err != nil {
 		return err
 	}
-	// Keys need no seed, so fetch them alongside the seed and encoded inputs.
+	// Keys need no seed. Fetch them alongside any missing encoded inputs.
 	ctx, cancel := context.WithCancel(ctx)
 	keysURL := fmt.Sprintf("%s/event/%s/quest/%d", apiBaseURL, q.event, q.number)
 	var keys map[string]json.RawMessage
@@ -127,28 +143,31 @@ func initQuest(ctx context.Context, q quest, baseDir string, output io.Writer) e
 		<-keysDone
 	}()
 
-	var user struct {
-		Seed *int64 `json:"seed"`
-	}
-	if err := getJSON(ctx, apiBaseURL+"/user/me", cookie, &user); err != nil {
-		return fmt.Errorf("get user seed: %w", err)
-	}
-	if user.Seed == nil || *user.Seed < 0 {
-		return errors.New("user response must contain a nonnegative integer seed")
-	}
-	inputURL := fmt.Sprintf("https://everybody.codes/assets/%s/%d/input/%d.json", q.event, q.number, *user.Seed)
-	var inputs map[string]string
-	if err := getJSON(ctx, inputURL, cookie, &inputs); err != nil {
-		return fmt.Errorf("get encoded notes: %w", err)
-	}
-	for _, part := range pending {
-		encoded, ok := inputs[strconv.Itoa(part)]
-		if !ok || encoded == "" {
-			return fmt.Errorf("input response is missing encoded notes for part %d", part)
+	if len(missing) > 0 {
+		var user struct {
+			Seed *int64 `json:"seed"`
 		}
-		path := filepath.Join(partInputDir(dir, part), "input-encoded.txt")
-		if err := writeEncoded(root, path, []byte(encoded)); err != nil {
-			return fmt.Errorf("write encoded notes for part %d: %w", part, err)
+		if err := getJSON(ctx, apiBaseURL+"/user/me", cookie, &user); err != nil {
+			return fmt.Errorf("get user seed: %w", err)
+		}
+		if user.Seed == nil || *user.Seed < 0 {
+			return errors.New("user response must contain a nonnegative integer seed")
+		}
+		inputURL := fmt.Sprintf("https://everybody.codes/assets/%s/%d/input/%d.json", q.event, q.number, *user.Seed)
+		var downloaded map[string]string
+		if err := getJSON(ctx, inputURL, cookie, &downloaded); err != nil {
+			return fmt.Errorf("get encoded notes: %w", err)
+		}
+		for _, part := range missing {
+			encoded, ok := downloaded[strconv.Itoa(part)]
+			if !ok || encoded == "" {
+				return fmt.Errorf("input response is missing encoded notes for part %d", part)
+			}
+			path := filepath.Join(partInputDir(dir, part), "input-encoded.txt")
+			if err := writeEncoded(root, path, []byte(encoded)); err != nil {
+				return fmt.Errorf("write encoded notes for part %d: %w", part, err)
+			}
+			inputs[strconv.Itoa(part)] = encoded
 		}
 	}
 	<-keysDone
@@ -188,6 +207,43 @@ func partInputDir(dir string, part int) string {
 	return filepath.Join(dir, fmt.Sprintf("part-%02d", part), "input")
 }
 
+// Cache entries are reusable only when they are regular files containing
+// complete hexadecimal AES blocks. Missing or malformed caches are downloaded
+// again; filesystem failures are reported instead of silently ignored.
+func readEncoded(root *os.Root, path string) (string, error) {
+	info, err := root.Lstat(path)
+	if errors.Is(err, os.ErrNotExist) {
+		return "", nil
+	}
+	if err != nil {
+		return "", err
+	}
+	if info.Mode()&os.ModeSymlink != 0 {
+		return "", nil
+	}
+	if !info.Mode().IsRegular() {
+		return "", errors.New("input-encoded.txt must be a regular file")
+	}
+	f, err := root.Open(path)
+	if err != nil {
+		return "", err
+	}
+	defer f.Close()
+	data, err := io.ReadAll(io.LimitReader(f, maxJSONResponseBytes+1))
+	if err != nil {
+		return "", err
+	}
+	if len(data) > maxJSONResponseBytes {
+		return "", nil
+	}
+	encoded := strings.TrimSpace(string(data))
+	decoded, err := hex.DecodeString(encoded)
+	if err != nil || len(decoded) == 0 || len(decoded)%aes.BlockSize != 0 {
+		return "", nil
+	}
+	return encoded, nil
+}
+
 func getJSON(ctx context.Context, endpoint string, cookie *http.Cookie, target any) error {
 	ctx, cancel := context.WithTimeout(ctx, 30*time.Second)
 	defer cancel()
@@ -202,7 +258,7 @@ func getJSON(ctx context.Context, endpoint string, cookie *http.Cookie, target a
 	}
 	defer resp.Body.Close()
 	if resp.StatusCode != http.StatusOK {
-		return fmt.Errorf("GET %s: HTTP %s", endpoint, resp.Status)
+		return &httpStatusError{endpoint: endpoint, statusCode: resp.StatusCode, status: resp.Status}
 	}
 	body, err := io.ReadAll(io.LimitReader(resp.Body, maxJSONResponseBytes+1))
 	if err != nil {

@@ -1,6 +1,6 @@
 # Everybody Codes CLI
 
-`ec` downloads and decrypts your [Everybody Codes](https://everybody.codes/) quest inputs, organizing them into a directory for each event, quest, and part. It uses only the Go standard library.
+`ec` downloads and decrypts your [Everybody Codes](https://everybody.codes/) quest inputs, organizing them into a directory for each event, quest, and part.
 
 ## Install
 
@@ -16,7 +16,23 @@ This installs `ec` into `GOBIN`, or `$(go env GOPATH)/bin` if `GOBIN` is unset (
 
 Sign in to Everybody Codes, then copy your session cookie value from the profile settings page.
 
-Create `~/.config/everybody-codes/` and save the cookie value in a file named `session` inside it. Include only the raw value, without quotes or the `everybody-codes=` prefix. A trailing newline is fine. Restrict access to the file:
+Run:
+
+```sh
+ec auth
+```
+
+Paste the raw cookie value at the prompt, without quotes or the `everybody-codes=` prefix. Input is hidden when using a terminal. The command saves it to `~/.config/everybody-codes/session` with permissions `0600`. It accepts no cookie argument or configuration flags.
+
+To verify your session:
+
+```sh
+ec auth check
+```
+
+This checks the authenticated user endpoint without downloading inputs or creating quest directories. If authentication fails, run `ec auth` again to replace the cookie.
+
+You can also create `~/.config/everybody-codes/` and save the raw cookie value in a file named `session` inside it. A trailing newline is fine. Restrict access to the file:
 
 ```sh
 chmod 600 ~/.config/everybody-codes/session
@@ -72,6 +88,10 @@ Quest numbers are padded to at least two digits: quest 1 uses `quest-01`, and qu
 
 Run the same command again after unlocking another part to download and decrypt its input. Existing directories are reused, and parts that already have `input.txt` are skipped. Once all three parts have `input.txt`, the command finishes without making HTTP requests or requiring a session cookie.
 
+For pending parts, saved encrypted inputs are reused. If all pending parts have usable `input-encoded.txt` files, a rerun requests only the quest keys. Missing or malformed encrypted inputs are downloaded again.
+
+Inputs are specific to your account. Use separate output directories for different accounts; changing the session cookie does not replace cached inputs or existing decoded files.
+
 ### Choose an output directory
 
 To create the quest under a different directory, use `--dir`:
@@ -82,7 +102,28 @@ ec https://everybody.codes/event/2024/quests/1 --dir ~/projects/everybody-codes
 
 This creates `~/projects/everybody-codes/2024/quest-01/`. The flag accepts absolute or relative paths and can appear before or after the URL. Missing directories are created automatically. Without `--dir`, the current directory is used.
 
-Use `ec --help` to see the command syntax.
+Use `ec --help` to see the available commands and download syntax. Each command also has its own help, such as `ec auth --help`, `ec auth check --help`, and `ec status --help`.
+
+## Show local quest status
+
+Run from the directory containing your event folders:
+
+```sh
+ec status
+ec status --dir ~/projects/everybody-codes
+```
+
+Parts are grouped by event and then quest. All three parts are listed for each local quest:
+
+```text
+2024
+  quest-01
+    part-01: ready
+    part-02: locked
+    part-03: locked
+```
+
+Each part is `ready` when its decoded `input.txt` file exists, or `locked` when it does not. Missing part directories are also shown as locked. Status uses local files only and does not indicate whether a part has been solved or whether more parts are available remotely.
 
 ## Development
 

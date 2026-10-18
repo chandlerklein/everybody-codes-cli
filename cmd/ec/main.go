@@ -6,10 +6,9 @@ import (
 	"io"
 	"os"
 	"os/signal"
-	"strings"
-)
 
-const usage = "usage: ec [--dir <directory>] https://everybody.codes/event/<EVENT>/quests/<QUEST>"
+	"github.com/spf13/cobra"
+)
 
 func main() {
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt)
@@ -21,40 +20,70 @@ func main() {
 }
 
 func run(ctx context.Context, args []string, output io.Writer) error {
-	dir := "."
-	var positional []string
-	for i := 0; i < len(args); i++ {
-		arg := args[i]
-		switch {
-		case arg == "--dir":
-			i++
-			if i >= len(args) {
-				return fmt.Errorf("--dir requires a directory\n%s", usage)
+	cmd := newRootCommand()
+	if args == nil {
+		args = []string{}
+	}
+	cmd.SetArgs(args)
+	cmd.SetIn(os.Stdin)
+	cmd.SetOut(output)
+	cmd.SetErr(output)
+	return cmd.ExecuteContext(ctx)
+}
+
+func newRootCommand() *cobra.Command {
+	var downloadDir, statusDir string
+	root := &cobra.Command{
+		Use:           "ec <quest-url>",
+		Short:         "Download and decrypt Everybody Codes quest inputs",
+		Example:       "  ec https://everybody.codes/event/2024/quests/1\n  ec --dir solutions https://everybody.codes/event/2024/quests/1",
+		Args:          cobra.ExactArgs(1),
+		SilenceErrors: true,
+		SilenceUsage:  true,
+		RunE: func(cmd *cobra.Command, args []string) error {
+			if downloadDir == "" {
+				return fmt.Errorf("--dir requires a nonempty directory")
 			}
-			dir = args[i]
-		case strings.HasPrefix(arg, "--dir="):
-			dir = strings.TrimPrefix(arg, "--dir=")
-		case arg == "--help" || arg == "-h":
-			_, err := fmt.Fprintln(output, usage)
-			return err
-		case arg == "--":
-			positional = append(positional, args[i+1:]...)
-			i = len(args)
-		case strings.HasPrefix(arg, "-"):
-			return fmt.Errorf("unknown option: %s\n%s", arg, usage)
-		default:
-			positional = append(positional, arg)
-		}
+			q, err := parseQuestURL(args[0])
+			if err != nil {
+				return err
+			}
+			return initQuest(cmd.Context(), q, downloadDir, cmd.OutOrStdout())
+		},
 	}
-	if dir == "" {
-		return fmt.Errorf("--dir requires a nonempty directory\n%s", usage)
+	root.Flags().StringVar(&downloadDir, "dir", ".", "Directory for quest inputs")
+	auth := &cobra.Command{
+		Use:   "auth",
+		Short: "Save a session cookie interactively",
+		Args:  cobra.ExactArgs(0),
+		RunE: func(cmd *cobra.Command, _ []string) error {
+			return runAuth(cmd.Context(), cmd.InOrStdin(), cmd.OutOrStdout())
+		},
 	}
-	if len(positional) != 1 {
-		return fmt.Errorf("%s", usage)
+	// A cookie supplied as a flag must not appear in the parser's error.
+	auth.SetFlagErrorFunc(func(cmd *cobra.Command, _ error) error {
+		return fmt.Errorf("unsupported auth flags; run %s --help for usage", cmd.CommandPath())
+	})
+	auth.AddCommand(&cobra.Command{
+		Use:   "check",
+		Short: "Verify the saved session",
+		Args:  cobra.ExactArgs(0),
+		RunE: func(cmd *cobra.Command, _ []string) error {
+			return runAuthCheck(cmd.Context(), cmd.OutOrStdout())
+		},
+	})
+	status := &cobra.Command{
+		Use:   "status",
+		Short: "Show local input readiness by event, quest, and part",
+		Args:  cobra.ExactArgs(0),
+		RunE: func(cmd *cobra.Command, _ []string) error {
+			if statusDir == "" {
+				return fmt.Errorf("--dir requires a nonempty directory")
+			}
+			return runStatus(statusDir, cmd.OutOrStdout())
+		},
 	}
-	q, err := parseQuestURL(positional[0])
-	if err != nil {
-		return err
-	}
-	return initQuest(ctx, q, dir, output)
+	status.Flags().StringVar(&statusDir, "dir", ".", "Directory containing local quest inputs")
+	root.AddCommand(auth, status)
+	return root
 }
