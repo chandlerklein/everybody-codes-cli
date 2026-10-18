@@ -4,10 +4,22 @@
 
 ## 1. Install
 
-With [Go](https://go.dev/dl/) 1.26 or newer installed, run:
+Download an archive from the [latest release](https://github.com/chandlerklein/everybody-codes-cli/releases/latest). No Go installation is needed.
+
+Choose `darwin` for macOS, `linux` for Linux, or `windows` for Windows. Choose `arm64` for Apple Silicon or other ARM64 systems, or `amd64` for Intel/AMD 64-bit systems.
+
+Extract the archive and put `ec` (`ec.exe` on Windows) in a directory on your `PATH`. Check the installation:
 
 ```sh
-GOPROXY=direct go install github.com/chandlerklein/everybody-codes-cli/cmd/ec@main
+ec --version
+```
+
+### Install with Go
+
+With [Go](https://go.dev/dl/) 1.26 or newer installed, you can also run:
+
+```sh
+go install github.com/chandlerklein/everybody-codes-cli/cmd/ec@latest
 ec --version
 ```
 
@@ -18,8 +30,6 @@ export PATH="$PATH:$(go env GOPATH)/bin"
 ```
 
 Add that line to `~/.bashrc` or `~/.zshrc` to keep it for new terminals. If you set a custom `GOBIN`, use that path instead.
-
-Prefer a download? When available, [GitHub Releases](https://github.com/chandlerklein/everybody-codes-cli/releases) has binaries for macOS, Linux, and Windows. Extract the archive for your system and put `ec` (`ec.exe` on Windows) in a directory on your `PATH`.
 
 ## 2. Sign in
 
