@@ -111,7 +111,7 @@ func TestInitQuestReplacesEncodedLinks(t *testing.T) {
 			if err := link(linkTarget, path); err != nil {
 				t.Fatal(err)
 			}
-			if err := run(context.Background(), []string{testURL}, io.Discard); err != nil {
+			if err := run(context.Background(), []string{"get", testURL}, io.Discard); err != nil {
 				t.Fatal(err)
 			}
 			assertFile(t, target, "keep this file")
@@ -148,7 +148,7 @@ func TestInitQuestRejectsDirectoryEscape(t *testing.T) {
 			if err := os.Symlink(outside, path); err != nil {
 				t.Fatal(err)
 			}
-			if err := run(context.Background(), []string{testURL}, io.Discard); err == nil {
+			if err := run(context.Background(), []string{"get", testURL}, io.Discard); err == nil {
 				t.Fatal("accepted a directory symlink escaping the output root")
 			}
 			entries, err := os.ReadDir(outside)
