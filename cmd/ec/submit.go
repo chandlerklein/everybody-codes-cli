@@ -26,7 +26,7 @@ func newSubmitCommand() *cobra.Command {
 		Long: "Submit a UTF-8 answer as an argument or, when omitted, read it from standard input. " +
 			"One final LF or CRLF is removed from standard input; other whitespace is preserved. " +
 			"Quest numbers may have leading zeros. Part numbers must be positive decimal integers without leading zeros. " +
-			"The year defaults to the current year.",
+			"The year defaults to the current year. Correct answers automatically download newly unlocked inputs into the current directory.",
 		Example: "  ec submit -y 2024 -q 1 -p 1 1309\n  ec submit -q 1 -p 1 'text answer'\n  ./solve | ec submit -y 2024 -q 1 -p 1",
 		Args:    cobra.MaximumNArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
@@ -107,10 +107,10 @@ func submitAnswer(ctx context.Context, q quest, part int, answer string, output 
 	if err != nil {
 		return fmt.Errorf("encode answer: %w", err)
 	}
-	ctx, cancel := context.WithTimeout(ctx, 30*time.Second)
+	requestCtx, cancel := context.WithTimeout(ctx, 30*time.Second)
 	defer cancel()
 	endpoint := fmt.Sprintf("%s/event/%s/quest/%d/part/%d/answer", apiBaseURL, q.year, q.number, part)
-	req, err := http.NewRequestWithContext(ctx, http.MethodPost, endpoint, bytes.NewReader(payload))
+	req, err := http.NewRequestWithContext(requestCtx, http.MethodPost, endpoint, bytes.NewReader(payload))
 	if err != nil {
 		return err
 	}
@@ -153,7 +153,12 @@ func submitAnswer(ctx context.Context, q quest, part int, answer string, output 
 		Correct bool `json:"correct"`
 	}
 	if json.Unmarshal(body, &result) == nil && result.Correct {
-		_, err = fmt.Fprintf(output, "Congratulations! You solved part %d of quest %d (%s).\n", part, q.number, q.year)
+		if _, err := fmt.Fprintf(output, "Congratulations! You solved part %d of quest %d (%s).\n", part, q.number, q.year); err != nil {
+			return err
+		}
+		if err := initQuest(ctx, q, ".", false, output); err != nil {
+			return fmt.Errorf("answer accepted, but downloading quest inputs failed: %w", err)
+		}
 	}
-	return err
+	return nil
 }

@@ -57,7 +57,7 @@ The session file takes precedence; a missing, empty, or whitespace-only file fal
 ## Download inputs
 
 > [!CAUTION]
-> Do not commit quest inputs or descriptions. Get permission before reusing or sharing them. Add `**/input/` to your repository's `.gitignore` to exclude generated input directories.
+> Do not commit quest inputs or descriptions. Get permission before reusing or sharing them. Add `**/input.txt` to your repository's `.gitignore` to exclude downloaded inputs.
 
 Run from your solutions directory using a quest URL or year and quest flags:
 
@@ -69,19 +69,17 @@ ec get --year 2024 --quest 01
 
 These commands select the same quest. `-y` and `-q` are aliases for `--year` and `--quest`; do not combine them with a URL. Omit `--year` to use the current year, for example `ec get -q 1`. Quest numbers are positive decimal integers, so `01` means 1 and `08` means 8.
 
-Each command creates:
+Each command creates three part directories. With only part 1 unlocked:
 
 ```text
 2024/quest-01/
 ├── part-01/
-│   └── input/
+│   └── input.txt
 ├── part-02/
-│   └── input/
 └── part-03/
-    └── input/
 ```
 
-Each part gets an `input/` directory containing `input-encoded.txt` with the encrypted input, plus `input.txt` when its decryption key is available. Quest numbers are padded to at least two digits.
+Decoded inputs are saved directly as `part-XX/input.txt` only when the part's decryption key is available. Encrypted inputs are never written to disk. Quest numbers are padded to at least two digits.
 
 Both forms accept `--dir` before or after the quest arguments:
 
@@ -91,15 +89,15 @@ ec get https://everybody.codes/event/2024/quests/1 --dir ~/projects/everybody-co
 
 This writes under `~/projects/everybody-codes/2024/quest-01/`. The default is the current directory. Relative and absolute paths are supported; missing directories are created.
 
-Rerun after unlocking another part. Existing `input.txt` files are preserved and skipped. Pending parts reuse usable encrypted files and request fresh keys; missing or malformed encrypted files are downloaded again. When all three decoded files exist, no session or HTTP requests are needed.
+Rerun after unlocking another part. Existing `input.txt` files are preserved and skipped; missing inputs are downloaded with fresh keys. When all three inputs exist, no session or HTTP requests are needed.
 
-Use `--force` (or `-f`) to download fresh encrypted inputs and overwrite existing input files:
+Use `--force` (or `-f`) to download fresh inputs and overwrite existing input files when their keys are available:
 
 ```sh
 ec get -y 2024 -q 1 --force
 ```
 
-Existing files and directories are reused by default. Inputs are account-specific: use separate output directories for different accounts. Changing the session does not replace cached or decoded files unless you pass `--force`. If the server reports an unavailable quest, the error identifies the year and quest; the server may use the same response for missing events, missing quests, and inputs not yet available.
+Inputs are account-specific: use separate output directories for different accounts. Changing the session does not replace existing inputs unless you pass `--force`. Files in the previous `input/` layout are left untouched; rerun `get` to download inputs into the new layout. If the server reports an unavailable quest, the error identifies the year and quest; the server may use the same response for missing events, missing quests, and inputs not yet available.
 
 ## Submit answers
 
@@ -115,9 +113,9 @@ ec submit --year 2024 --quest 01 --part 1 'text answer'
 
 Answers are UTF-8 text, including numeric answers. Quote answers containing spaces; use `--` before an answer starting with a hyphen. If the argument is omitted, `submit` reads standard input until EOF and removes one final LF or CRLF, preserving other whitespace and line breaks. An explicit argument takes precedence over standard input. Empty or whitespace-only answers and invalid UTF-8 are rejected before any request.
 
-`submit` uses the same saved session or environment variable as `get`. It posts `{"answer":"<ANSWER>"}` to `https://api.everybody.codes/event/<YEAR>/quest/<QUEST>/part/<PART>/answer`. It does not require local quest files or create any files.
+`submit` uses the same saved session or environment variable as `get`. It posts `{"answer":"<ANSWER>"}` to `https://api.everybody.codes/event/<YEAR>/quest/<QUEST>/part/<PART>/answer`. It does not require local quest files.
 
-For a 2xx response, the command prints the HTTP status and response body. When the API confirms `"correct": true`, it also prints a congratulations message identifying the year, quest, and part. Other responses exit with an error containing the HTTP status and response body, including unknown statuses. HTTP 409 Conflict reports that the part is already solved. Requests are not retried automatically; the API's response body provides the result of the submission.
+For a 2xx response, the command prints the HTTP status and response body. When the API confirms `"correct": true`, it prints a congratulations message and runs `get` for the same quest in the current directory, downloading newly unlocked inputs and preserving existing files. A download failure reports that the answer was accepted. Other responses exit with an error containing the HTTP status and response body, including unknown statuses. HTTP 409 Conflict reports that the part is already solved. Requests are not retried automatically; the API's response body provides the result of the submission.
 
 ## Show local status
 
@@ -136,7 +134,7 @@ ec status --dir ~/projects/everybody-codes
     part-03: locked
 ```
 
-Each local quest lists all three parts. Status checks the same zero-padded directories as `get`: `part-01`, `part-02`, and `part-03`. Other spellings, such as `part-1` or `part-001`, are ignored. A part is `ready` if `input/input.txt` is a regular file; otherwise it is `locked`, including missing part directories. Status uses local files only and does not track solved parts or remote availability. An empty directory reports `No local quests found.`; a missing base directory is an error.
+Each local quest lists all three parts. Status checks the same zero-padded directories as `get`: `part-01`, `part-02`, and `part-03`. Other spellings, such as `part-1` or `part-001`, are ignored. A part is `ready` if its `input.txt` is a regular file; otherwise it is `locked`, including missing part directories. Status uses local files only and does not track solved parts or remote availability. An empty directory reports `No local quests found.`; a missing base directory is an error.
 
 ## Help and shell completion
 

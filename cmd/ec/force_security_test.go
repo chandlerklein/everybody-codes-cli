@@ -12,43 +12,42 @@ func TestForceReplacesInputLinksWithoutModifyingTargets(t *testing.T) {
 	for _, kind := range []string{"external symlink", "internal symlink", "hard link", "dangling symlink"} {
 		t.Run(kind, func(t *testing.T) {
 			setup(t)
-			dir := "2024/quest-01/part-01/input"
+			dir := "2024/quest-01/part-01"
 			if err := os.MkdirAll(dir, 0o755); err != nil {
 				t.Fatal(err)
 			}
-			for _, name := range []string{"input.txt", "input-encoded.txt"} {
-				target := filepath.Join(t.TempDir(), name)
-				linkTarget := target
-				if kind == "internal symlink" {
-					target = filepath.Join(filepath.Dir(dir), "original-"+name)
-					linkTarget = "../original-" + name
-				}
-				if kind != "dangling symlink" {
-					writeTestFile(t, target, "preserve original")
-				}
-				link := os.Symlink
-				if kind == "hard link" {
-					link = os.Link
-				}
-				if err := link(linkTarget, filepath.Join(dir, name)); err != nil {
-					t.Fatal(err)
-				}
-				t.Cleanup(func() {
-					if kind == "dangling symlink" {
-						assertMissing(t, target)
-					} else {
-						assertFile(t, target, "preserve original")
-					}
-				})
+			const name = "input.txt"
+			target := filepath.Join(t.TempDir(), name)
+			linkTarget := target
+			if kind == "internal symlink" {
+				target = filepath.Join(filepath.Dir(dir), "original-"+name)
+				linkTarget = "../original-" + name
 			}
+			if kind != "dangling symlink" {
+				writeTestFile(t, target, "preserve original")
+			}
+			link := os.Symlink
+			if kind == "hard link" {
+				link = os.Link
+			}
+			if err := link(linkTarget, filepath.Join(dir, name)); err != nil {
+				t.Fatal(err)
+			}
+			t.Cleanup(func() {
+				if kind == "dangling symlink" {
+					assertMissing(t, target)
+				} else {
+					assertFile(t, target, "preserve original")
+				}
+			})
 			if err := run(t.Context(), []string{"get", testURL, "--force"}, io.Discard); err != nil {
 				t.Fatal(err)
 			}
 			assertFile(t, filepath.Join(dir, "input.txt"), testNotes[0].plain)
-			assertFile(t, filepath.Join(dir, "input-encoded.txt"), testNotes[0].encoded)
+			assertMissing(t, filepath.Join(dir, "input-encoded.txt"))
 			entries, err := os.ReadDir(dir)
-			if err != nil || len(entries) != 2 {
-				t.Fatalf("input directory entries = %v, error = %v; want only input files", entries, err)
+			if err != nil || len(entries) != 1 {
+				t.Fatalf("part directory entries = %v, error = %v; want only input files", entries, err)
 			}
 			for _, entry := range entries {
 				if !entry.Type().IsRegular() {

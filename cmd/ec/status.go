@@ -125,7 +125,7 @@ func questPartReadiness(root *os.Root, path string) ([3]bool, error) {
 		if err != nil || number < 1 || number > len(ready) {
 			continue
 		}
-		inputPath := filepath.Join(partInputDir(path, number), "input.txt")
+		inputPath := filepath.Join(partDir(path, number), "input.txt")
 		info, err := root.Stat(inputPath)
 		if errors.Is(err, os.ErrNotExist) {
 			continue
