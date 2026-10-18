@@ -81,7 +81,7 @@ Each command creates:
     └── input/
 ```
 
-Each part gets an `input/` directory containing `input-encoded.txt` with the encrypted input, plus `input.txt` when its decryption key is available. Quest numbers are padded to at least two digits. `get` no longer creates `answer.txt`; any existing answer files are left untouched, including with `--force`.
+Each part gets an `input/` directory containing `input-encoded.txt` with the encrypted input, plus `input.txt` when its decryption key is available. Quest numbers are padded to at least two digits.
 
 Both forms accept `--dir` before or after the quest arguments:
 
