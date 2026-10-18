@@ -4,13 +4,54 @@
 
 ## Install
 
+### Prebuilt binaries
+
+Download an archive for your system from [GitHub Releases](https://github.com/chandlerklein/everybody-codes-cli/releases/latest). No Go installation is required.
+
+| System | Intel/AMD 64-bit (`amd64`) | ARM64 (`arm64`) |
+| --- | --- | --- |
+| macOS | `ec_<version>_darwin_amd64.tar.gz` | `ec_<version>_darwin_arm64.tar.gz` (Apple silicon) |
+| Linux | `ec_<version>_linux_amd64.tar.gz` | `ec_<version>_linux_arm64.tar.gz` |
+| Windows | `ec_<version>_windows_amd64.zip` | `ec_<version>_windows_arm64.zip` |
+
+Archive filenames use the version without the `v` prefix, such as `ec_0.1.0_linux_amd64.tar.gz`. Download `checksums.txt` from the same release to verify the archive's SHA-256 hash before extracting it.
+
+For example, for Linux on Intel/AMD, run from the download directory:
+
+```sh
+sha256sum --ignore-missing -c checksums.txt
+tar -xzf ec_0.1.0_linux_amd64.tar.gz
+mkdir -p "$HOME/.local/bin"
+install -m 755 ec "$HOME/.local/bin/ec"
+```
+
+Use the filename for your downloaded version. On macOS, verify with `shasum -a 256 ec_0.1.0_darwin_arm64.tar.gz` (or the `amd64` archive) and compare the result with its entry in `checksums.txt`, then extract and install as above. Make sure `~/.local/bin` is on your `PATH`.
+
+On Windows, use PowerShell's `Get-FileHash .\ec_0.1.0_windows_amd64.zip -Algorithm SHA256` (or the `arm64` archive), compare it with `checksums.txt`, and extract the ZIP. Move `ec.exe` into a directory on your `PATH`.
+
+After installing:
+
+```sh
+ec --version
+```
+
+### Install with Go
+
 Requires Go 1.26 or newer.
 
 ```sh
 go install github.com/chandlerklein/everybody-codes-cli/cmd/ec@latest
 ```
 
+To install a specific published version:
+
+```sh
+go install github.com/chandlerklein/everybody-codes-cli/cmd/ec@v0.1.0
+```
+
 This installs `ec` into `GOBIN`, or `$(go env GOPATH)/bin` if `GOBIN` is unset (usually `~/go/bin`). Make sure that directory is on your `PATH`.
+
+`ec --version` reports the installed version for both release downloads and versioned Go installs. Local builds use Go's embedded module version when available and otherwise report `dev`.
 
 ## Set up your session
 
@@ -149,3 +190,25 @@ Run the tests:
 ```sh
 go test ./...
 ```
+
+### Releases
+
+After merging the release changes to `main`, create and push a version tag on the commit to release:
+
+```sh
+git switch main
+git pull --ff-only origin main
+git tag v0.1.0
+git push origin v0.1.0
+```
+
+Use a new version for each release. The [release workflow](.github/workflows/release.yml) runs tests first, then uses [GoReleaser](https://goreleaser.com/getting-started/quick-start/) to build `./cmd/ec` for macOS, Linux, and Windows on `amd64` and `arm64`. It publishes six archives and `checksums.txt` to GitHub Releases using the workflow's built-in `GITHUB_TOKEN`. Tags with a prerelease suffix, such as `v0.2.0-rc.1`, create GitHub prereleases.
+
+With GoReleaser v2 installed, validate the configuration and build the release archives locally without publishing:
+
+```sh
+goreleaser check
+goreleaser release --snapshot --clean
+```
+
+Generated binaries, archives, and checksums are written to the ignored `dist/` directory.

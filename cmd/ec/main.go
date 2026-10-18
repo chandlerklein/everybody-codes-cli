@@ -6,9 +6,24 @@ import (
 	"io"
 	"os"
 	"os/signal"
+	"runtime/debug"
 
 	"github.com/spf13/cobra"
 )
+
+// GoReleaser sets version to the release tag with -ldflags.
+var version = "dev"
+
+func buildVersion(info *debug.BuildInfo) string {
+	if version != "dev" {
+		return version
+	}
+	// go install module@version embeds the module version without linker flags.
+	if info != nil && info.Main.Version != "" && info.Main.Version != "(devel)" {
+		return info.Main.Version
+	}
+	return version
+}
 
 func main() {
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt)
@@ -33,8 +48,10 @@ func run(ctx context.Context, args []string, output io.Writer) error {
 
 func newRootCommand() *cobra.Command {
 	var downloadDir, statusDir, event, questNumber string
+	info, _ := debug.ReadBuildInfo()
 	root := &cobra.Command{
 		Use:     "ec [<quest-url> | --event <event> --quest <quest>]",
+		Version: buildVersion(info),
 		Short:   "Download and decrypt Everybody Codes quest inputs",
 		Long:    "Download and decrypt Everybody Codes quest inputs using a quest URL or both --event and --quest. Quest numbers may have leading zeros.",
 		Example: "  ec https://everybody.codes/event/2024/quests/1\n  ec -e 2024 -q 01\n  ec --event 2024 --quest 1 --dir solutions",
@@ -70,6 +87,7 @@ func newRootCommand() *cobra.Command {
 			return initQuest(cmd.Context(), q, downloadDir, cmd.OutOrStdout())
 		},
 	}
+	root.SetVersionTemplate("ec {{.Version}}\n")
 	root.Flags().StringVar(&downloadDir, "dir", ".", "Directory for quest inputs")
 	root.Flags().StringVarP(&event, "event", "e", "", "Event identifier (for example, 2024; requires --quest)")
 	root.Flags().StringVarP(&questNumber, "quest", "q", "", "Quest number in decimal (for example, 1 or 01; requires --event)")
